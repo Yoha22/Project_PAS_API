@@ -1,0 +1,1114 @@
+{
+	"info": {
+		"_postman_id": "pas-api-collection",
+		"name": "Project PAS API",
+		"description": "Colección completa de endpoints para la API del Sistema de Acceso",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Autenticación",
+			"item": [
+				{
+					"name": "Check Admin",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/auth/check-admin",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "check-admin"]
+						},
+						"description": "Verifica si existe un administrador registrado"
+					}
+				},
+				{
+					"name": "Register",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data.token) {",
+									"        pm.environment.set('auth_token', jsonData.data.token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"correo\": \"yodamoju41@gmail.com\",\n    \"password\": \"N22y1900#\",\n    \"telefono\": \"3174661434\",\n    \"codigo\": 123456\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/register",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "register"]
+						},
+						"description": "Registra un nuevo administrador (solo si no existe ninguno)"
+					}
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data.token) {",
+									"        pm.environment.set('auth_token', jsonData.data.token);",
+									"        console.log('Token guardado:', jsonData.data.token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"correo\": \"yodamoju41@gmail.com\",\n    \"password\": \"N22y1900#\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "login"]
+						},
+						"description": "Inicia sesión y obtiene token de autenticación"
+					}
+				},
+				{
+					"name": "Me",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/auth/me",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "me"]
+						},
+						"description": "Obtiene información del usuario autenticado"
+					}
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/auth/logout",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "logout"]
+						},
+						"description": "Cierra sesión y elimina el token"
+					}
+				}
+			]
+		},
+		{
+			"name": "Depuración",
+			"item": [
+				{
+					"name": "Debug Auth (Pública)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/debug/auth",
+							"host": ["{{base_url}}"],
+							"path": ["api", "debug", "auth"]
+						},
+						"description": "Ruta pública de depuración para verificar configuración de autenticación"
+					}
+				},
+				{
+					"name": "Debug Auth Protected",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/debug/auth-protected",
+							"host": ["{{base_url}}"],
+							"path": ["api", "debug", "auth-protected"]
+						},
+						"description": "Ruta protegida de depuración para verificar autenticación"
+					}
+				}
+			]
+		},
+		{
+			"name": "Usuarios",
+			"item": [
+				{
+					"name": "Listar Usuarios",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/usuarios?per_page=10",
+							"host": ["{{base_url}}"],
+							"path": ["api", "usuarios"],
+							"query": [
+								{
+									"key": "per_page",
+									"value": "10",
+									"description": "Número de elementos por página"
+								}
+							]
+						},
+						"description": "Obtiene lista paginada de usuarios"
+					}
+				},
+				{
+					"name": "Crear Usuario",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"nombre\": \"Juan Pérez\",\n    \"cedula\": \"1234567890\",\n    \"celular\": \"3001234567\",\n    \"huella_digital\": null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/usuarios",
+							"host": ["{{base_url}}"],
+							"path": ["api", "usuarios"]
+						},
+						"description": "Crea un nuevo usuario"
+					}
+				},
+				{
+					"name": "Obtener Usuario",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/usuarios/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "usuarios", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Obtiene un usuario por ID"
+					}
+				},
+				{
+					"name": "Actualizar Usuario",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"nombre\": \"Juan Pérez Actualizado\",\n    \"cedula\": \"1234567890\",\n    \"celular\": \"3001234567\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/usuarios/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "usuarios", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Actualiza un usuario existente"
+					}
+				},
+				{
+					"name": "Eliminar Usuario",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/usuarios/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "usuarios", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Elimina un usuario"
+					}
+				}
+			]
+		},
+		{
+			"name": "Administradores",
+			"item": [
+				{
+					"name": "Listar Administradores",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/administradores",
+							"host": ["{{base_url}}"],
+							"path": ["api", "administradores"]
+						},
+						"description": "Obtiene lista de administradores"
+					}
+				},
+				{
+					"name": "Crear Administrador",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"correo\": \"admin@example.com\",\n    \"password\": \"Password123#\",\n    \"telefono_admin\": \"3001234567\",\n    \"codigo\": 123456\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/administradores",
+							"host": ["{{base_url}}"],
+							"path": ["api", "administradores"]
+						},
+						"description": "Crea un nuevo administrador"
+					}
+				},
+				{
+					"name": "Obtener Administrador",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/administradores/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "administradores", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Obtiene un administrador por ID"
+					}
+				},
+				{
+					"name": "Actualizar Administrador",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"correo\": \"admin@example.com\",\n    \"telefono_admin\": \"3001234567\",\n    \"codigo\": 123456\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/administradores/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "administradores", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Actualiza un administrador existente"
+					}
+				},
+				{
+					"name": "Eliminar Administrador",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/administradores/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "administradores", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Elimina un administrador"
+					}
+				}
+			]
+		},
+		{
+			"name": "Accesos",
+			"item": [
+				{
+					"name": "Estadísticas de Accesos",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/accesos/stats",
+							"host": ["{{base_url}}"],
+							"path": ["api", "accesos", "stats"]
+						},
+						"description": "Obtiene estadísticas de accesos"
+					}
+				},
+				{
+					"name": "Listar Accesos",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/accesos",
+							"host": ["{{base_url}}"],
+							"path": ["api", "accesos"]
+						},
+						"description": "Obtiene lista de accesos"
+					}
+				},
+				{
+					"name": "Crear Acceso",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usuario_id\": 1,\n    \"dispositivo_id\": 1,\n    \"fecha_hora\": \"2025-11-18 10:00:00\",\n    \"tipo\": \"entrada\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/accesos",
+							"host": ["{{base_url}}"],
+							"path": ["api", "accesos"]
+						},
+						"description": "Registra un nuevo acceso"
+					}
+				}
+			]
+		},
+		{
+			"name": "Alarmas",
+			"item": [
+				{
+					"name": "Listar Alarmas",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/alarmas",
+							"host": ["{{base_url}}"],
+							"path": ["api", "alarmas"]
+						},
+						"description": "Obtiene lista de alarmas"
+					}
+				},
+				{
+					"name": "Crear Alarma",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"dispositivo_id\": 1,\n    \"tipo\": \"intruso\",\n    \"fecha_hora\": \"2025-11-18 10:00:00\",\n    \"descripcion\": \"Intento de acceso no autorizado\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/alarmas",
+							"host": ["{{base_url}}"],
+							"path": ["api", "alarmas"]
+						},
+						"description": "Registra una nueva alarma"
+					}
+				},
+				{
+					"name": "Eliminar Alarma",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/alarmas/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "alarmas", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Elimina una alarma"
+					}
+				}
+			]
+		},
+		{
+			"name": "Huellas",
+			"item": [
+				{
+					"name": "Crear Huella",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"idHuella\": 12345,\n    \"usuario_id\": 1\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/huellas",
+							"host": ["{{base_url}}"],
+							"path": ["api", "huellas"]
+						},
+						"description": "Crea una nueva huella digital"
+					}
+				},
+				{
+					"name": "Obtener Huella Temporal",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/huellas/temporal",
+							"host": ["{{base_url}}"],
+							"path": ["api", "huellas", "temporal"]
+						},
+						"description": "Obtiene la última huella temporal registrada"
+					}
+				}
+			]
+		},
+		{
+			"name": "Dispositivos ESP32",
+			"item": [
+				{
+					"name": "Listar Dispositivos",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/dispositivos",
+							"host": ["{{base_url}}"],
+							"path": ["api", "dispositivos"]
+						},
+						"description": "Obtiene lista de dispositivos ESP32"
+					}
+				},
+				{
+					"name": "Crear Dispositivo",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"nombre\": \"Dispositivo Principal\",\n    \"ubicacion\": \"Entrada Principal\",\n    \"activo\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/dispositivos",
+							"host": ["{{base_url}}"],
+							"path": ["api", "dispositivos"]
+						},
+						"description": "Crea un nuevo dispositivo ESP32"
+					}
+				},
+				{
+					"name": "Obtener Dispositivo",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/dispositivos/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "dispositivos", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Obtiene un dispositivo por ID"
+					}
+				},
+				{
+					"name": "Actualizar Dispositivo",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"nombre\": \"Dispositivo Actualizado\",\n    \"ubicacion\": \"Nueva Ubicación\",\n    \"activo\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/dispositivos/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "dispositivos", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Actualiza un dispositivo existente"
+					}
+				},
+				{
+					"name": "Eliminar Dispositivo",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/dispositivos/:id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "dispositivos", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Elimina un dispositivo"
+					}
+				},
+				{
+					"name": "Generar Código",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/dispositivos/generate-code",
+							"host": ["{{base_url}}"],
+							"path": ["api", "dispositivos", "generate-code"]
+						},
+						"description": "Genera un código para registro de dispositivo"
+					}
+				},
+				{
+					"name": "Revocar Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/dispositivos/:id/revoke-token",
+							"host": ["{{base_url}}"],
+							"path": ["api", "dispositivos", ":id", "revoke-token"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Revoca el token de un dispositivo"
+					}
+				}
+			]
+		},
+		{
+			"name": "ESP32 Endpoints",
+			"item": [
+				{
+					"name": "Registrar Dispositivo ESP32",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"codigo_admin\": 123456,\n    \"nombre\": \"ESP32 Principal\",\n    \"ubicacion\": \"Entrada\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/esp32/register",
+							"host": ["{{base_url}}"],
+							"path": ["api", "esp32", "register"]
+						},
+						"description": "Registra un nuevo dispositivo ESP32 (requiere código de administrador)"
+					}
+				},
+				{
+					"name": "Obtener Configuración",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{device_token}}",
+								"type": "text",
+								"description": "Token del dispositivo ESP32"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/esp32/config",
+							"host": ["{{base_url}}"],
+							"path": ["api", "esp32", "config"]
+						},
+						"description": "Obtiene la configuración del dispositivo (requiere token de dispositivo)"
+					}
+				},
+				{
+					"name": "Registrar Huella",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{device_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"idHuella\": 12345\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/esp32/huella",
+							"host": ["{{base_url}}"],
+							"path": ["api", "esp32", "huella"]
+						},
+						"description": "Registra una huella digital desde el dispositivo"
+					}
+				},
+				{
+					"name": "Obtener Usuario por Huella",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{device_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/esp32/usuario/:idHuella",
+							"host": ["{{base_url}}"],
+							"path": ["api", "esp32", "usuario", ":idHuella"],
+							"variable": [
+								{
+									"key": "idHuella",
+									"value": "12345"
+								}
+							]
+						},
+						"description": "Obtiene información del usuario por ID de huella"
+					}
+				},
+				{
+					"name": "Registrar Acceso",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{device_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usuario_id\": 1,\n    \"tipo\": \"entrada\",\n    \"fecha_hora\": \"2025-11-18 10:00:00\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/esp32/acceso",
+							"host": ["{{base_url}}"],
+							"path": ["api", "esp32", "acceso"]
+						},
+						"description": "Registra un acceso desde el dispositivo"
+					}
+				},
+				{
+					"name": "Registrar Alarma",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{device_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"tipo\": \"intruso\",\n    \"descripcion\": \"Intento de acceso no autorizado\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/esp32/alarma",
+							"host": ["{{base_url}}"],
+							"path": ["api", "esp32", "alarma"]
+						},
+						"description": "Registra una alarma desde el dispositivo"
+					}
+				},
+				{
+					"name": "Obtener Teléfono Admin",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{device_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/esp32/admin/telefono",
+							"host": ["{{base_url}}"],
+							"path": ["api", "esp32", "admin", "telefono"]
+						},
+						"description": "Obtiene el teléfono del administrador"
+					}
+				},
+				{
+					"name": "Obtener Código Admin",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{device_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/esp32/admin/codigo",
+							"host": ["{{base_url}}"],
+							"path": ["api", "esp32", "admin", "codigo"]
+						},
+						"description": "Obtiene el código del administrador"
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "https://project-pas-api.onrender.com",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "device_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
+
