@@ -46,7 +46,16 @@ Esta API está configurada para desplegarse en Render usando Docker.
 
    **Base de Datos PostgreSQL (CONFIGURAR MANUALMENTE):**
    
-   Obtén estos valores desde tu servicio de base de datos en Render > "Connections":
+   **Opción 1 - Usar DB_URL (RECOMENDADO):**
+   
+   Agrega esta variable usando la URL completa de conexión desde tu base de datos en Render:
+   - `DB_URL`: `postgresql://access_db_93sr_user:KPHWtaC6rBJGpzFmGA763xpYznrJztJp@dpg-d4du80mmcj7s73caquso-a:5432/access_db_93sr`
+     - Obtén esta URL desde tu base de datos en Render > "Connections" > "External Database URL"
+     - Si usas DB_URL, no necesitas configurar DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD por separado
+   
+   **Opción 2 - Variables individuales:**
+   
+   Si prefieres usar variables individuales, agrega estas desde tu servicio de base de datos en Render > "Connections":
    
    - `DB_CONNECTION`: `pgsql`
    - `DB_HOST`: `dpg-d4du80mmcj7s73caquso-a` (o el hostname de tu base de datos)
@@ -55,7 +64,10 @@ Esta API está configurada para desplegarse en Render usando Docker.
    - `DB_USERNAME`: `access_db_93sr_user` (o el usuario de tu base de datos)
    - `DB_PASSWORD`: (copia la contraseña desde la página de conexiones de tu base de datos)
    
-   **⚠️ IMPORTANTE**: Copia estos valores exactamente desde la página de conexiones de tu base de datos en Render.
+   **⚠️ IMPORTANTE**: 
+   - Si `DB_HOST` y `DB_PORT` no funcionan, usa `DB_URL` en su lugar
+   - Copia los valores exactamente desde la página de conexiones de tu base de datos en Render
+   - Asegúrate de que no haya espacios en blanco al inicio o final de los valores
 
    **Opcionales:**
    - `LOG_CHANNEL`: `stderr` (recomendado para Render)

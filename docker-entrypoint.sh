@@ -7,18 +7,57 @@ echo "=== Iniciando contenedor Laravel ==="
 echo "Verificando variables de entorno..."
 echo "APP_ENV: ${APP_ENV:-no definida}"
 echo "DB_CONNECTION: ${DB_CONNECTION:-no definida}"
+echo "DB_URL: ${DB_URL:+***definida***}"
 echo "DB_HOST: ${DB_HOST:-no definida}"
 echo "DB_PORT: ${DB_PORT:-no definida}"
 echo "DB_DATABASE: ${DB_DATABASE:-no definida}"
 echo "DB_USERNAME: ${DB_USERNAME:-no definida}"
 echo "DB_PASSWORD: ${DB_PASSWORD:+***definida***}"
 
-# Verificar que las variables críticas estén definidas
-if [ -z "$DB_HOST" ] || [ "$DB_HOST" = "127.0.0.1" ] || [ "$DB_HOST" = "localhost" ]; then
-  echo "ERROR: DB_HOST no está configurado correctamente. Valor actual: ${DB_HOST:-vacío}"
-  echo "Por favor, verifica que las variables de entorno de la base de datos estén configuradas en Render."
-  echo "Si estás usando render.yaml, asegúrate de que la base de datos 'laravel-db' esté creada."
+# Si DB_URL está disponible, Laravel la usará automáticamente
+if [ -n "$DB_URL" ]; then
+  echo "✓ DB_URL encontrada, Laravel la usará para la conexión"
+fi
+
+# Verificar que tengamos al menos DB_DATABASE, DB_USERNAME y DB_PASSWORD
+if [ -z "$DB_DATABASE" ] || [ -z "$DB_USERNAME" ] || [ -z "$DB_PASSWORD" ]; then
+  echo "ERROR: Faltan variables críticas de base de datos"
+  echo "DB_DATABASE: ${DB_DATABASE:-vacío}"
+  echo "DB_USERNAME: ${DB_USERNAME:-vacío}"
+  echo "DB_PASSWORD: ${DB_PASSWORD:+definida}"
+  echo ""
+  echo "Por favor, verifica que estas variables estén configuradas en Render > Environment"
   exit 1
+fi
+
+# Si no tenemos DB_HOST pero tenemos DB_DATABASE, intentar continuar
+# (Laravel usará valores por defecto o DB_URL si está disponible)
+if [ -z "$DB_HOST" ] || [ "$DB_HOST" = "127.0.0.1" ] || [ "$DB_HOST" = "localhost" ]; then
+  if [ -z "$DB_URL" ]; then
+    echo "ADVERTENCIA: DB_HOST no está configurado correctamente. Valor: ${DB_HOST:-vacío}"
+    echo "Intentando continuar... Si falla, configura DB_HOST o DB_URL en Render"
+  else
+    echo "DB_HOST no configurado, pero DB_URL está disponible - continuando..."
+  fi
+fi
+
+# Si DB_PORT no está definido, usar el valor por defecto de PostgreSQL
+if [ -z "$DB_PORT" ]; then
+  echo "DB_PORT no definido, usando valor por defecto: 5432"
+  export DB_PORT=5432
+fi
+
+# Si DB_HOST no está definido pero tenemos los otros datos, intentar construir DB_URL
+# o usar el hostname de Render si está disponible
+if [ -z "$DB_HOST" ] || [ "$DB_HOST" = "127.0.0.1" ] || [ "$DB_HOST" = "localhost" ]; then
+  if [ -z "$DB_URL" ] && [ -n "$DB_DATABASE" ] && [ -n "$DB_USERNAME" ] && [ -n "$DB_PASSWORD" ]; then
+    # Intentar construir DB_URL si no está disponible
+    # Nota: Esto requiere que el usuario configure DB_HOST manualmente
+    echo "ERROR: DB_HOST es requerido pero no está configurado"
+    echo "Por favor, agrega DB_HOST=dpg-d4du80mmcj7s73caquso-a en Render > Environment"
+    echo "O agrega DB_URL con la URL completa de conexión de PostgreSQL"
+    exit 1
+  fi
 fi
 
 # Limpiar cache anterior si existe (importante antes de verificar conexión)
