@@ -40,7 +40,9 @@ Esta API está configurada para desplegarse en Render usando Docker.
    - `APP_KEY`: Genera con `php artisan key:generate` o déjalo que Render lo genere
    - `APP_ENV`: `production`
    - `APP_DEBUG`: `false`
-   - `APP_URL`: URL de tu servicio en Render (ej: `https://tu-api.onrender.com`)
+   - `APP_URL`: URL completa de tu servicio (ej: `https://laravel-api.onrender.com`)
+     - **Nota**: Si no configuras esta variable, Laravel usará automáticamente `RENDER_EXTERNAL_URL` que Render proporciona automáticamente
+     - Puedes configurarla manualmente en Render o dejarla sin configurar para usar el valor automático
 
    **Base de Datos (PostgreSQL):**
    - `DB_CONNECTION`: `pgsql`
