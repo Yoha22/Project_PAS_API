@@ -13,14 +13,17 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        // Solo crear usuario de prueba en desarrollo
+        if (app()->environment('local', 'testing')) {
+            // User::factory(10)->create();
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+            User::factory()->create([
+                'name' => 'Test User',
+                'email' => 'test@example.com',
+            ]);
+        }
 
-        // Ejecutar el seeder de administradores
+        // Ejecutar el seeder de administradores (siempre)
         $this->call([
             AdministradorSeeder::class,
         ]);
