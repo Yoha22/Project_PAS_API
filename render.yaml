@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: laravel-api
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: APP_NAME
+        value: Laravel API
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: false
+      - key: APP_URL
+        sync: false
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: LOG_LEVEL
+        value: error
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_HOST
+        fromDatabase:
+          name: laravel-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: laravel-db
+          property: port
+      - key: DB_DATABASE
+        fromDatabase:
+          name: laravel-db
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: laravel-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: laravel-db
+          property: password
+      - key: APP_KEY
+        generateValue: true
+    healthCheckPath: /api/auth/check-admin
+
+databases:
+  - name: laravel-db
+    plan: starter
+    databaseName: laravel
+    user: laravel
+

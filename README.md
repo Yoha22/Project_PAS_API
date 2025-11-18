@@ -9,6 +9,96 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Despliegue en Render con Docker
+
+Esta API está configurada para desplegarse en Render usando Docker.
+
+### Requisitos Previos
+
+- Cuenta en [Render](https://render.com)
+- Repositorio Git (GitHub, GitLab, o Bitbucket) con el código
+
+### Pasos para Desplegar
+
+1. **Conectar el Repositorio**
+   - Inicia sesión en Render
+   - Ve a Dashboard > New > Web Service
+   - Conecta tu repositorio Git
+
+2. **Configuración del Servicio**
+   - Render detectará automáticamente el archivo `render.yaml`
+   - O configura manualmente:
+     - **Runtime**: Docker
+     - **Dockerfile Path**: `./Dockerfile`
+     - **Docker Context**: `.`
+
+3. **Variables de Entorno**
+
+   Configura las siguientes variables de entorno en Render:
+
+   **Requeridas:**
+   - `APP_KEY`: Genera con `php artisan key:generate` o déjalo que Render lo genere
+   - `APP_ENV`: `production`
+   - `APP_DEBUG`: `false`
+   - `APP_URL`: URL de tu servicio en Render (ej: `https://tu-api.onrender.com`)
+
+   **Base de Datos (PostgreSQL):**
+   - `DB_CONNECTION`: `pgsql`
+   - `DB_HOST`: Se configura automáticamente si usas la base de datos de Render
+   - `DB_PORT`: Se configura automáticamente
+   - `DB_DATABASE`: Se configura automáticamente
+   - `DB_USERNAME`: Se configura automáticamente
+   - `DB_PASSWORD`: Se configura automáticamente
+
+   **Opcionales:**
+   - `LOG_CHANNEL`: `stderr` (recomendado para Render)
+   - `LOG_LEVEL`: `error`
+   - `CACHE_DRIVER`: `file` o `redis` (si usas Redis)
+   - `SESSION_DRIVER`: `file` o `redis`
+   - `QUEUE_CONNECTION`: `sync` o `database`
+
+4. **Base de Datos PostgreSQL**
+   - En Render, crea una nueva base de datos PostgreSQL
+   - Render configurará automáticamente las variables de entorno si usas `render.yaml`
+   - Las migraciones se ejecutarán automáticamente al iniciar el contenedor
+
+5. **Despliegue**
+   - Render construirá la imagen Docker automáticamente
+   - El servicio estará disponible en la URL proporcionada
+
+### Construcción Local con Docker
+
+Para probar localmente:
+
+```bash
+# Construir la imagen
+docker build -t laravel-api .
+
+# Ejecutar el contenedor
+docker run -p 8000:8000 \
+  -e APP_KEY=base64:tu-clave-aqui \
+  -e DB_CONNECTION=pgsql \
+  -e DB_HOST=tu-host \
+  -e DB_DATABASE=tu-db \
+  -e DB_USERNAME=tu-user \
+  -e DB_PASSWORD=tu-password \
+  laravel-api
+```
+
+### Archivos de Configuración
+
+- `Dockerfile`: Configuración de la imagen Docker
+- `docker-entrypoint.sh`: Script de inicio que ejecuta migraciones y optimiza cache
+- `render.yaml`: Configuración para despliegue automático en Render
+- `.dockerignore`: Archivos excluidos del contexto de Docker
+
+### Notas Importantes
+
+- El contenedor ejecuta automáticamente las migraciones al iniciar
+- El cache de configuración, rutas y vistas se optimiza automáticamente
+- Asegúrate de que `APP_KEY` esté configurado antes del primer despliegue
+- Para producción, siempre usa `APP_DEBUG=false`
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
