@@ -100,6 +100,10 @@ fi
 echo "Ejecutando migraciones..."
 php artisan migrate --force
 
+# Ejecutar seeders (para crear datos iniciales como administradores)
+echo "Ejecutando seeders..."
+php artisan db:seed --force
+
 # Optimizar cache (después de que todo esté configurado)
 echo "Optimizando cache..."
 php artisan config:cache
