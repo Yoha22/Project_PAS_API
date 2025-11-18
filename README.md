@@ -25,32 +25,37 @@ Esta API está configurada para desplegarse en Render usando Docker.
    - Ve a Dashboard > New > Web Service
    - Conecta tu repositorio Git
 
-2. **Configuración del Servicio**
-   - Render detectará automáticamente el archivo `render.yaml`
-   - O configura manualmente:
-     - **Runtime**: Docker
-     - **Dockerfile Path**: `./Dockerfile`
-     - **Docker Context**: `.`
+2. **Configuración del Servicio (Despliegue Manual)**
+   - **Runtime**: Docker
+   - **Dockerfile Path**: `./Dockerfile`
+   - **Docker Context**: `.`
+   - **Build Command**: (dejar vacío, Render usará el Dockerfile)
+   - **Start Command**: (dejar vacío, se usa el CMD del Dockerfile)
 
-3. **Variables de Entorno**
+3. **Variables de Entorno (CRÍTICO - Configurar Manualmente)**
 
-   Configura las siguientes variables de entorno en Render:
+   Ve a tu servicio web en Render > **Environment** y agrega estas variables:
 
    **Requeridas:**
-   - `APP_KEY`: Genera con `php artisan key:generate` o déjalo que Render lo genere
+   - `APP_NAME`: `Laravel API`
    - `APP_ENV`: `production`
    - `APP_DEBUG`: `false`
+   - `APP_KEY`: Genera con `php artisan key:generate` o déjalo que Render lo genere automáticamente
    - `APP_URL`: URL completa de tu servicio (ej: `https://laravel-api.onrender.com`)
-     - **Nota**: Si no configuras esta variable, Laravel usará automáticamente `RENDER_EXTERNAL_URL` que Render proporciona automáticamente
-     - Puedes configurarla manualmente en Render o dejarla sin configurar para usar el valor automático
+     - **Nota**: Si no configuras esta variable, Laravel usará automáticamente `RENDER_EXTERNAL_URL`
 
-   **Base de Datos (PostgreSQL):**
+   **Base de Datos PostgreSQL (CONFIGURAR MANUALMENTE):**
+   
+   Obtén estos valores desde tu servicio de base de datos en Render > "Connections":
+   
    - `DB_CONNECTION`: `pgsql`
-   - `DB_HOST`: Se configura automáticamente si usas la base de datos de Render
-   - `DB_PORT`: Se configura automáticamente
-   - `DB_DATABASE`: Se configura automáticamente
-   - `DB_USERNAME`: Se configura automáticamente
-   - `DB_PASSWORD`: Se configura automáticamente
+   - `DB_HOST`: `dpg-d4du80mmcj7s73caquso-a` (o el hostname de tu base de datos)
+   - `DB_PORT`: `5432`
+   - `DB_DATABASE`: `access_db_93sr` (o el nombre de tu base de datos)
+   - `DB_USERNAME`: `access_db_93sr_user` (o el usuario de tu base de datos)
+   - `DB_PASSWORD`: (copia la contraseña desde la página de conexiones de tu base de datos)
+   
+   **⚠️ IMPORTANTE**: Copia estos valores exactamente desde la página de conexiones de tu base de datos en Render.
 
    **Opcionales:**
    - `LOG_CHANNEL`: `stderr` (recomendado para Render)
@@ -60,14 +65,7 @@ Esta API está configurada para desplegarse en Render usando Docker.
    - `QUEUE_CONNECTION`: `sync` o `database`
 
 4. **Base de Datos PostgreSQL**
-   - **IMPORTANTE**: Primero crea la base de datos PostgreSQL en Render:
-     - Ve a Dashboard > New > PostgreSQL
-     - Nómbrala `laravel-db` (debe coincidir con el nombre en `render.yaml`)
-     - Selecciona el plan (Starter es suficiente para desarrollo)
-   - Si usas `render.yaml`, Render configurará automáticamente las variables de entorno
-   - Si despliegas manualmente, debes configurar las variables de entorno manualmente:
-     - Ve a tu servicio web > Environment
-     - Agrega las variables `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` desde la base de datos
+   - Asegúrate de que tu base de datos PostgreSQL ya esté creada en Render
    - Las migraciones se ejecutarán automáticamente al iniciar el contenedor
 
 5. **Despliegue**
@@ -90,17 +88,21 @@ Este error indica que las variables de entorno de la base de datos no están con
    - Verifica que el nombre de la base de datos en `render.yaml` coincida con el nombre real de tu base de datos en Render
    - Asegúrate de que el servicio web y la base de datos estén en el mismo "Blueprint" o grupo
 
-3. **Si despliegas manualmente:**
+3. **Si despliegas manualmente (TU CASO):**
    - Ve a tu servicio web en Render
    - Sección "Environment"
-   - Verifica que estas variables estén configuradas:
+   - **Verifica que estas variables estén configuradas correctamente:**
      - `DB_CONNECTION=pgsql`
-     - `DB_HOST` (debe ser el host de tu base de datos, NO `127.0.0.1`)
-     - `DB_PORT` (generalmente `5432`)
-     - `DB_DATABASE` (nombre de tu base de datos)
-     - `DB_USERNAME` (usuario de la base de datos)
-     - `DB_PASSWORD` (contraseña de la base de datos)
-   - Puedes obtener estos valores desde tu servicio de base de datos en Render > "Connections"
+     - `DB_HOST=dpg-d4du80mmcj7s73caquso-a` (NO debe ser `127.0.0.1` o `localhost`)
+     - `DB_PORT=5432`
+     - `DB_DATABASE=access_db_93sr`
+     - `DB_USERNAME=access_db_93sr_user`
+     - `DB_PASSWORD`: (copia la contraseña desde la página de conexiones de tu base de datos)
+   - **Cómo obtener estos valores:**
+     1. Ve a tu servicio de base de datos `access_db_93sr` en Render
+     2. Haz clic en "Connections" o "Info"
+     3. Copia cada valor exactamente como aparece
+   - **Verificación rápida**: Los logs del contenedor mostrarán los valores de estas variables al iniciar
 
 4. **Verifica los logs:**
    - Los logs del contenedor mostrarán qué variables de entorno están disponibles

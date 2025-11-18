@@ -1,3 +1,7 @@
+# Configuración para Render
+# NOTA: Si despliegas manualmente, este archivo NO se aplicará automáticamente
+# Debes configurar las variables de entorno manualmente en el panel de Render
+
 services:
   - type: web
     name: laravel-api
@@ -20,33 +24,23 @@ services:
         value: error
       - key: DB_CONNECTION
         value: pgsql
+      # IMPORTANTE: Si despliegas manualmente, configura estas variables en Render:
+      # - DB_HOST: dpg-d4du80mmcj7s73caquso-a
+      # - DB_PORT: 5432
+      # - DB_DATABASE: access_db_93sr
+      # - DB_USERNAME: access_db_93sr_user
+      # - DB_PASSWORD: (tu contraseña de la base de datos)
       - key: DB_HOST
-        fromDatabase:
-          name: access_db_93sr
-          property: host
+        sync: false
       - key: DB_PORT
-        fromDatabase:
-          name: access_db_93sr
-          property: port
+        sync: false
       - key: DB_DATABASE
-        fromDatabase:
-          name: access_db_93sr
-          property: database
+        sync: false
       - key: DB_USERNAME
-        fromDatabase:
-          name: access_db_93sr
-          property: user
+        sync: false
       - key: DB_PASSWORD
-        fromDatabase:
-          name: access_db_93sr
-          property: password
+        sync: false
       - key: APP_KEY
         generateValue: true
     healthCheckPath: /api/auth/check-admin
-
-databases:
-  - name: access_db_93sr
-    plan: starter
-    databaseName: access_db_93sr
-    user: access_db_93sr_user
 
