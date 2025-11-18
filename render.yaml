@@ -22,31 +22,31 @@ services:
         value: pgsql
       - key: DB_HOST
         fromDatabase:
-          name: laravel-db
+          name: access_db_93sr
           property: host
       - key: DB_PORT
         fromDatabase:
-          name: laravel-db
+          name: access_db_93sr
           property: port
       - key: DB_DATABASE
         fromDatabase:
-          name: laravel-db
+          name: access_db_93sr
           property: database
       - key: DB_USERNAME
         fromDatabase:
-          name: laravel-db
+          name: access_db_93sr
           property: user
       - key: DB_PASSWORD
         fromDatabase:
-          name: laravel-db
+          name: access_db_93sr
           property: password
       - key: APP_KEY
         generateValue: true
     healthCheckPath: /api/auth/check-admin
 
 databases:
-  - name: laravel-db
+  - name: access_db_93sr
     plan: starter
-    databaseName: laravel
-    user: laravel
+    databaseName: access_db_93sr
+    user: access_db_93sr_user
 

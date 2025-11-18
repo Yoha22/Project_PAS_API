@@ -60,13 +60,51 @@ Esta API está configurada para desplegarse en Render usando Docker.
    - `QUEUE_CONNECTION`: `sync` o `database`
 
 4. **Base de Datos PostgreSQL**
-   - En Render, crea una nueva base de datos PostgreSQL
-   - Render configurará automáticamente las variables de entorno si usas `render.yaml`
+   - **IMPORTANTE**: Primero crea la base de datos PostgreSQL en Render:
+     - Ve a Dashboard > New > PostgreSQL
+     - Nómbrala `laravel-db` (debe coincidir con el nombre en `render.yaml`)
+     - Selecciona el plan (Starter es suficiente para desarrollo)
+   - Si usas `render.yaml`, Render configurará automáticamente las variables de entorno
+   - Si despliegas manualmente, debes configurar las variables de entorno manualmente:
+     - Ve a tu servicio web > Environment
+     - Agrega las variables `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` desde la base de datos
    - Las migraciones se ejecutarán automáticamente al iniciar el contenedor
 
 5. **Despliegue**
    - Render construirá la imagen Docker automáticamente
    - El servicio estará disponible en la URL proporcionada
+
+### Solución de Problemas
+
+#### Error: "Connection refused" o "connection to server at 127.0.0.1"
+
+Este error indica que las variables de entorno de la base de datos no están configuradas correctamente.
+
+**Solución:**
+
+1. **Verifica que la base de datos esté creada:**
+   - Asegúrate de que la base de datos PostgreSQL esté creada en Render
+   - El nombre debe coincidir con el especificado en `render.yaml` (por defecto: `laravel-db`)
+
+2. **Si usas `render.yaml`:**
+   - Verifica que el nombre de la base de datos en `render.yaml` coincida con el nombre real de tu base de datos en Render
+   - Asegúrate de que el servicio web y la base de datos estén en el mismo "Blueprint" o grupo
+
+3. **Si despliegas manualmente:**
+   - Ve a tu servicio web en Render
+   - Sección "Environment"
+   - Verifica que estas variables estén configuradas:
+     - `DB_CONNECTION=pgsql`
+     - `DB_HOST` (debe ser el host de tu base de datos, NO `127.0.0.1`)
+     - `DB_PORT` (generalmente `5432`)
+     - `DB_DATABASE` (nombre de tu base de datos)
+     - `DB_USERNAME` (usuario de la base de datos)
+     - `DB_PASSWORD` (contraseña de la base de datos)
+   - Puedes obtener estos valores desde tu servicio de base de datos en Render > "Connections"
+
+4. **Verifica los logs:**
+   - Los logs del contenedor mostrarán qué variables de entorno están disponibles
+   - Busca mensajes como "DB_HOST: no definida" en los logs
 
 ### Construcción Local con Docker
 
