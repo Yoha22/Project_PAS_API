@@ -6,6 +6,29 @@ use App\Http\Middleware\AuthenticateEsp32;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
+// Ruta de depuración (pública)
+Route::get('/debug/auth', function (Request $request) {
+    $token = $request->bearerToken() ?? $request->header('Authorization');
+    
+    return response()->json([
+        'success' => true,
+        'debug_info' => [
+            'has_bearer_token' => $request->bearerToken() !== null,
+            'bearer_token' => $request->bearerToken() ? substr($request->bearerToken(), 0, 20) . '...' : null,
+            'authorization_header' => $request->header('Authorization') ? substr($request->header('Authorization'), 0, 30) . '...' : null,
+            'user_authenticated' => $request->user() !== null,
+            'user_id' => $request->user()?->id,
+            'user_email' => $request->user()?->correo ?? null,
+            'auth_guard' => auth()->getDefaultDriver(),
+            'sanctum_configured' => class_exists(\Laravel\Sanctum\Sanctum::class),
+            'all_headers' => $request->headers->all(),
+            'request_method' => $request->method(),
+            'request_path' => $request->path(),
+            'request_url' => $request->fullUrl(),
+        ],
+    ]);
+});
+
 // Rutas de autenticación (públicas)
 Route::prefix('auth')->group(function () {
     Route::get('/check-admin', [AuthController::class, 'checkAdmin']);
@@ -23,6 +46,21 @@ Route::prefix('auth')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
+    });
+    
+    // Ruta de depuración protegida
+    Route::get('/debug/auth-protected', function (Request $request) {
+        return response()->json([
+            'success' => true,
+            'message' => 'Ruta protegida accesible',
+            'user' => $request->user(),
+            'user_id' => $request->user()?->id,
+            'user_email' => $request->user()?->correo,
+            'token_info' => [
+                'has_token' => $request->bearerToken() !== null,
+                'token_preview' => $request->bearerToken() ? substr($request->bearerToken(), 0, 20) . '...' : null,
+            ],
+        ]);
     });
     
     // Administradores
