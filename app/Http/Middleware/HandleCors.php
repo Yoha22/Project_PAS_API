@@ -31,7 +31,8 @@ class HandleCors
     private function isOriginAllowed(?string $origin): bool
     {
         if (!$origin) {
-            return false;
+            // Permitir peticiones sin origen (por ejemplo, Postman, curl)
+            return true;
         }
 
         $allowedOrigins = $this->getAllowedOrigins();
@@ -51,6 +52,11 @@ class HandleCors
             }
         }
 
+        // Permitir orígenes de Render (para debugging)
+        if (str_contains($origin, 'onrender.com')) {
+            return true;
+        }
+
         return false;
     }
 
@@ -59,17 +65,25 @@ class HandleCors
      */
     private function getOriginForHeaders(?string $requestOrigin): ?string
     {
-        if (!$requestOrigin) {
-            $allowedOrigins = $this->getAllowedOrigins();
-            return $allowedOrigins[0] ?? null;
-        }
-
-        if ($this->isOriginAllowed($requestOrigin)) {
+        // Si hay un origen en la petición y está permitido, usarlo
+        if ($requestOrigin && $this->isOriginAllowed($requestOrigin)) {
             return $requestOrigin;
         }
 
+        // Si no hay origen, usar el primero de los permitidos
+        if (!$requestOrigin) {
+            $allowedOrigins = $this->getAllowedOrigins();
+            return $allowedOrigins[0] ?? '*';
+        }
+
+        // Si el origen no está permitido pero es de Render, permitirlo temporalmente
+        if (str_contains($requestOrigin, 'onrender.com')) {
+            return $requestOrigin;
+        }
+
+        // Por defecto, usar el primero de los permitidos
         $allowedOrigins = $this->getAllowedOrigins();
-        return $allowedOrigins[0] ?? null;
+        return $allowedOrigins[0] ?? '*';
     }
 
     /**

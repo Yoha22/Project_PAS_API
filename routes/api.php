@@ -6,6 +6,16 @@ use App\Http\Middleware\AuthenticateEsp32;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
+// Ruta de prueba simple (pública) - responde rápido para verificar que el servidor está activo
+Route::get('/ping', function (Request $request) {
+    return response()->json([
+        'success' => true,
+        'message' => 'Servidor activo',
+        'timestamp' => now()->toIso8601String(),
+        'origin' => $request->header('Origin'),
+    ]);
+});
+
 // Ruta de depuración (pública)
 Route::get('/debug/auth', function (Request $request) {
     $token = $request->bearerToken() ?? $request->header('Authorization');
