@@ -10,21 +10,79 @@ use Symfony\Component\HttpFoundation\Response;
 class HandleCors
 {
     /**
-     * Obtener el origen permitido desde la configuración
+     * Obtener orígenes permitidos desde la configuración
      */
-    private function getAllowedOrigin(): string
+    private function getAllowedOrigins(): array
     {
-        return env('FRONTEND_URL', 'https://sistema-acceso-frontend.onrender.com');
+        $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'https://sistema-acceso-frontend.onrender.com'));
+        
+        // Convertir a array si es string
+        if (is_string($frontendUrl)) {
+            $frontendUrl = explode(',', $frontendUrl);
+        }
+        
+        // Limpiar espacios en blanco
+        return array_map('trim', $frontendUrl);
+    }
+
+    /**
+     * Verificar si el origen está permitido
+     */
+    private function isOriginAllowed(?string $origin): bool
+    {
+        if (!$origin) {
+            return false;
+        }
+
+        $allowedOrigins = $this->getAllowedOrigins();
+        
+        // Verificar coincidencia exacta
+        if (in_array($origin, $allowedOrigins)) {
+            return true;
+        }
+
+        // Verificar coincidencia por dominio (sin protocolo)
+        foreach ($allowedOrigins as $allowed) {
+            $allowedDomain = parse_url($allowed, PHP_URL_HOST);
+            $originDomain = parse_url($origin, PHP_URL_HOST);
+            
+            if ($allowedDomain && $originDomain && $allowedDomain === $originDomain) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Obtener el origen a usar en los headers CORS
+     */
+    private function getOriginForHeaders(?string $requestOrigin): ?string
+    {
+        if (!$requestOrigin) {
+            $allowedOrigins = $this->getAllowedOrigins();
+            return $allowedOrigins[0] ?? null;
+        }
+
+        if ($this->isOriginAllowed($requestOrigin)) {
+            return $requestOrigin;
+        }
+
+        $allowedOrigins = $this->getAllowedOrigins();
+        return $allowedOrigins[0] ?? null;
     }
 
     /**
      * Agregar headers CORS a una respuesta
      */
-    private function addCorsHeaders(Response $response): Response
+    private function addCorsHeaders(Response $response, ?string $requestOrigin = null): Response
     {
-        $origin = $this->getAllowedOrigin();
+        $origin = $this->getOriginForHeaders($requestOrigin);
         
-        $response->headers->set('Access-Control-Allow-Origin', $origin);
+        if ($origin) {
+            $response->headers->set('Access-Control-Allow-Origin', $origin);
+        }
+        
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
         $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
         $response->headers->set('Access-Control-Allow-Credentials', 'true');
@@ -43,23 +101,23 @@ class HandleCors
         $origin = $request->header('Origin');
         $method = $request->getMethod();
         
-        // Logging temporal para debugging
+        // Logging para debugging
         Log::info('CORS Middleware', [
             'method' => $method,
             'path' => $request->path(),
             'origin' => $origin,
-            'allowed_origin' => $this->getAllowedOrigin(),
+            'allowed_origins' => $this->getAllowedOrigins(),
+            'is_allowed' => $this->isOriginAllowed($origin),
         ]);
 
         // Manejar preflight OPTIONS requests
         if ($method === 'OPTIONS') {
             Log::info('CORS: Handling preflight OPTIONS request');
-            return response('', 200)
-                ->header('Access-Control-Allow-Origin', $this->getAllowedOrigin())
-                ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
-                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
-                ->header('Access-Control-Allow-Credentials', 'true')
-                ->header('Access-Control-Max-Age', '86400');
+            
+            $response = response('', 200);
+            $this->addCorsHeaders($response, $origin);
+            
+            return $response;
         }
 
         try {
@@ -67,10 +125,11 @@ class HandleCors
             $response = $next($request);
             
             // Agregar headers CORS a la respuesta exitosa
-            $this->addCorsHeaders($response);
+            $this->addCorsHeaders($response, $origin);
             
             Log::info('CORS: Headers agregados a respuesta exitosa', [
                 'status' => $response->getStatusCode(),
+                'origin' => $origin,
             ]);
             
             return $response;
@@ -79,6 +138,7 @@ class HandleCors
             Log::error('CORS: Excepción capturada, agregando headers CORS', [
                 'exception' => get_class($e),
                 'message' => $e->getMessage(),
+                'origin' => $origin,
             ]);
             
             // Intentar obtener la respuesta del handler de excepciones de Laravel
@@ -90,7 +150,7 @@ class HandleCors
             ], $statusCode);
             
             // Agregar headers CORS a la respuesta de error
-            $this->addCorsHeaders($response);
+            $this->addCorsHeaders($response, $origin);
             
             return $response;
         }
