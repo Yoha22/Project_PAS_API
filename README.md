@@ -69,6 +69,13 @@ Esta API está configurada para desplegarse en Render usando Docker.
    - Copia los valores exactamente desde la página de conexiones de tu base de datos en Render
    - Asegúrate de que no haya espacios en blanco al inicio o final de los valores
 
+   **CORS y Frontend (IMPORTANTE para SPA):**
+   - `FRONTEND_URL`: URL completa de tu frontend (ej: `https://sistema-acceso-frontend.onrender.com`)
+     - **CRÍTICO**: Esta variable es necesaria para que el middleware CORS permita peticiones desde tu frontend
+     - Sin esta variable, el frontend no podrá recibir respuestas del backend debido a políticas CORS
+     - El valor por defecto es `https://sistema-acceso-frontend.onrender.com` si no se configura
+     - Debe coincidir exactamente con el dominio desde donde se hacen las peticiones
+
    **Opcionales:**
    - `LOG_CHANNEL`: `stderr` (recomendado para Render)
    - `LOG_LEVEL`: `error`
@@ -152,6 +159,9 @@ docker run -p 8000:8000 \
 - El cache de configuración, rutas y vistas se optimiza automáticamente
 - Asegúrate de que `APP_KEY` esté configurado antes del primer despliegue
 - Para producción, siempre usa `APP_DEBUG=false`
+- **CORS**: Configura `FRONTEND_URL` en las variables de entorno para permitir peticiones desde tu frontend SPA
+  - Sin esta variable, el frontend recibirá errores "Network Error" al intentar comunicarse con la API
+  - El middleware CORS se ejecuta primero para asegurar que todas las respuestas (incluyendo errores) tengan los headers necesarios
 
 ## About Laravel
 
