@@ -127,13 +127,16 @@ class HandleCors
         $origin = $request->header('Origin');
         $method = $request->getMethod();
         
-        // Logging para debugging
-        Log::info('CORS Middleware', [
+        // Logging para debugging (más detallado)
+        Log::info('CORS Middleware - Request recibida', [
             'method' => $method,
             'path' => $request->path(),
+            'full_url' => $request->fullUrl(),
             'origin' => $origin,
+            'user_agent' => $request->header('User-Agent'),
             'allowed_origins' => $this->getAllowedOrigins(),
             'is_allowed' => $this->isOriginAllowed($origin),
+            'all_headers' => $request->headers->all(),
         ]);
 
         // Manejar preflight OPTIONS requests - DEBE ser lo primero
@@ -172,6 +175,8 @@ class HandleCors
             Log::info('CORS: Headers agregados a respuesta exitosa', [
                 'status' => $response->getStatusCode(),
                 'origin' => $origin,
+                'origin_used_in_header' => $response->headers->get('Access-Control-Allow-Origin'),
+                'response_headers' => $response->headers->all(),
             ]);
             
             return $response;
