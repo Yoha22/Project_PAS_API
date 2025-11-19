@@ -16,6 +16,41 @@ Route::get('/ping', function (Request $request) {
     ]);
 });
 
+// Ruta de diagnóstico CORS (pública)
+Route::get('/cors-test', function (Request $request) {
+    $origin = $request->header('Origin');
+    $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'https://sistema-acceso-frontend.onrender.com'));
+    
+    return response()->json([
+        'success' => true,
+        'message' => 'CORS Test',
+        'cors_info' => [
+            'request_origin' => $origin,
+            'configured_frontend_url' => $frontendUrl,
+            'origin_allowed' => $origin && (
+                $origin === $frontendUrl || 
+                str_contains($origin, parse_url($frontendUrl, PHP_URL_HOST) ?? '')
+            ),
+            'headers_sent' => [
+                'Access-Control-Allow-Origin' => $origin ?: $frontendUrl,
+                'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+                'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With, Accept, Origin',
+                'Access-Control-Allow-Credentials' => 'true',
+            ],
+        ],
+        'request_info' => [
+            'method' => $request->method(),
+            'path' => $request->path(),
+            'full_url' => $request->fullUrl(),
+            'headers' => [
+                'Origin' => $request->header('Origin'),
+                'Access-Control-Request-Method' => $request->header('Access-Control-Request-Method'),
+                'Access-Control-Request-Headers' => $request->header('Access-Control-Request-Headers'),
+            ],
+        ],
+    ]);
+});
+
 // Ruta de depuración (pública)
 Route::get('/debug/auth', function (Request $request) {
     $token = $request->bearerToken() ?? $request->header('Authorization');

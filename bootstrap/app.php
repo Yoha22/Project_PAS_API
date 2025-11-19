@@ -13,7 +13,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // CORS debe ejecutarse primero para manejar preflight OPTIONS y agregar headers a todas las respuestas
+        // CORS debe ejecutarse PRIMERO, antes que cualquier otro middleware
+        // Esto es crítico para que las peticiones OPTIONS (preflight) se manejen correctamente
+        $middleware->priority([
+            \App\Http\Middleware\HandleCors::class,
+        ]);
+        
         $middleware->api(prepend: [
             \App\Http\Middleware\HandleCors::class,
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,

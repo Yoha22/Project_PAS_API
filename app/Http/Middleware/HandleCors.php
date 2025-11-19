@@ -65,25 +65,22 @@ class HandleCors
      */
     private function getOriginForHeaders(?string $requestOrigin): ?string
     {
-        // Si hay un origen en la petición y está permitido, usarlo
-        if ($requestOrigin && $this->isOriginAllowed($requestOrigin)) {
-            return $requestOrigin;
+        // Si hay un origen en la petición, verificar si está permitido
+        if ($requestOrigin) {
+            // Si está permitido, usarlo
+            if ($this->isOriginAllowed($requestOrigin)) {
+                return $requestOrigin;
+            }
+            
+            // Si es de Render, permitirlo (para debugging y compatibilidad)
+            if (str_contains($requestOrigin, 'onrender.com')) {
+                return $requestOrigin;
+            }
         }
 
-        // Si no hay origen, usar el primero de los permitidos
-        if (!$requestOrigin) {
-            $allowedOrigins = $this->getAllowedOrigins();
-            return $allowedOrigins[0] ?? '*';
-        }
-
-        // Si el origen no está permitido pero es de Render, permitirlo temporalmente
-        if (str_contains($requestOrigin, 'onrender.com')) {
-            return $requestOrigin;
-        }
-
-        // Por defecto, usar el primero de los permitidos
+        // Si no hay origen o no está permitido, usar el primero de los permitidos
         $allowedOrigins = $this->getAllowedOrigins();
-        return $allowedOrigins[0] ?? '*';
+        return $allowedOrigins[0] ?? null;
     }
 
     /**
@@ -91,14 +88,29 @@ class HandleCors
      */
     private function addCorsHeaders(Response $response, ?string $requestOrigin = null): Response
     {
-        $origin = $this->getOriginForHeaders($requestOrigin);
+        // Determinar el origen a usar en los headers
+        $originToUse = null;
         
-        if ($origin) {
-            $response->headers->set('Access-Control-Allow-Origin', $origin);
+        if ($requestOrigin) {
+            // Si hay un origen en la petición y está permitido, usarlo
+            if ($this->isOriginAllowed($requestOrigin)) {
+                $originToUse = $requestOrigin;
+            } elseif (str_contains($requestOrigin, 'onrender.com')) {
+                // Permitir orígenes de Render
+                $originToUse = $requestOrigin;
+            }
         }
         
+        // Si no se determinó un origen, usar el configurado por defecto
+        if (!$originToUse) {
+            $allowedOrigins = $this->getAllowedOrigins();
+            $originToUse = $allowedOrigins[0] ?? 'https://sistema-acceso-frontend.onrender.com';
+        }
+        
+        // Establecer todos los headers CORS
+        $response->headers->set('Access-Control-Allow-Origin', $originToUse);
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-        $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+        $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
         $response->headers->set('Access-Control-Allow-Credentials', 'true');
         $response->headers->set('Access-Control-Max-Age', '86400');
         
@@ -124,12 +136,28 @@ class HandleCors
             'is_allowed' => $this->isOriginAllowed($origin),
         ]);
 
-        // Manejar preflight OPTIONS requests
+        // Manejar preflight OPTIONS requests - DEBE ser lo primero
         if ($method === 'OPTIONS') {
-            Log::info('CORS: Handling preflight OPTIONS request');
+            Log::info('CORS: Handling preflight OPTIONS request', [
+                'origin' => $origin,
+                'requested_method' => $request->header('Access-Control-Request-Method'),
+                'requested_headers' => $request->header('Access-Control-Request-Headers'),
+            ]);
             
             $response = response('', 200);
-            $this->addCorsHeaders($response, $origin);
+            
+            // Establecer headers CORS para preflight
+            if ($origin && $this->isOriginAllowed($origin)) {
+                $response->headers->set('Access-Control-Allow-Origin', $origin);
+            } else {
+                $allowedOrigins = $this->getAllowedOrigins();
+                $response->headers->set('Access-Control-Allow-Origin', $allowedOrigins[0] ?? '*');
+            }
+            
+            $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
+            $response->headers->set('Access-Control-Allow-Credentials', 'true');
+            $response->headers->set('Access-Control-Max-Age', '86400');
             
             return $response;
         }
