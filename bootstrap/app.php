@@ -61,7 +61,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) use ($addCorsHeaders) {
             // Solo para rutas API
             if ($request->is('api/*')) {
-                $statusCode = method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500;
+                // Obtener código de estado de forma segura
+                $statusCode = 500;
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpException) {
+                    $statusCode = $e->getStatusCode();
+                } elseif (property_exists($e, 'status')) {
+                    $statusCode = $e->status;
+                }
                 
                 // Manejar excepciones de validación de Laravel
                 if ($e instanceof \Illuminate\Validation\ValidationException) {
