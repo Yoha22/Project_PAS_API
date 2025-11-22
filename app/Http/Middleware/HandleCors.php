@@ -185,34 +185,67 @@ class HandleCors
             $response = $next($request);
             
             // Agregar headers CORS a la respuesta exitosa
-            $this->addCorsHeaders($response, $origin);
+            // IMPORTANTE: Hacer esto ANTES de cualquier otra modificación
+            $response = $this->addCorsHeaders($response, $origin);
+            
+            // Verificar que los headers se agregaron correctamente
+            $corsOrigin = $response->headers->get('Access-Control-Allow-Origin');
+            if (!$corsOrigin) {
+                // Si no se agregaron, forzar agregarlos de nuevo
+                Log::warning('CORS: Headers no detectados después de agregarlos, forzando agregado', [
+                    'origin' => $origin,
+                    'response_headers' => $response->headers->all(),
+                ]);
+                $response = $this->addCorsHeaders($response, $origin);
+            }
             
             Log::info('CORS: Headers agregados a respuesta exitosa', [
                 'status' => $response->getStatusCode(),
                 'origin' => $origin,
                 'origin_used_in_header' => $response->headers->get('Access-Control-Allow-Origin'),
-                'response_headers' => $response->headers->all(),
+                'all_cors_headers' => [
+                    'Access-Control-Allow-Origin' => $response->headers->get('Access-Control-Allow-Origin'),
+                    'Access-Control-Allow-Credentials' => $response->headers->get('Access-Control-Allow-Credentials'),
+                    'Access-Control-Allow-Methods' => $response->headers->get('Access-Control-Allow-Methods'),
+                ],
             ]);
             
             return $response;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // Capturar excepciones y asegurar que los headers CORS se agreguen incluso en errores
             Log::error('CORS: Excepción capturada, agregando headers CORS', [
                 'exception' => get_class($e),
                 'message' => $e->getMessage(),
                 'origin' => $origin,
+                'trace' => $e->getTraceAsString(),
             ]);
             
             // Intentar obtener la respuesta del handler de excepciones de Laravel
             // Si no hay respuesta, crear una respuesta de error con headers CORS
-            $statusCode = method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500;
+            $statusCode = 500;
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpException) {
+                $statusCode = $e->getStatusCode();
+            } elseif (property_exists($e, 'status')) {
+                $statusCode = $e->status;
+            }
+            
             $response = response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
             ], $statusCode);
             
-            // Agregar headers CORS a la respuesta de error
-            $this->addCorsHeaders($response, $origin);
+            // Agregar headers CORS a la respuesta de error - CRÍTICO
+            $response = $this->addCorsHeaders($response, $origin);
+            
+            // Verificar que los headers se agregaron
+            if (!$response->headers->get('Access-Control-Allow-Origin')) {
+                Log::error('CORS: ERROR CRÍTICO - Headers CORS no se agregaron a respuesta de error', [
+                    'origin' => $origin,
+                    'response_headers' => $response->headers->all(),
+                ]);
+                // Forzar agregado de nuevo
+                $response = $this->addCorsHeaders($response, $origin);
+            }
             
             return $response;
         }
