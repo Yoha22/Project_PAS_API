@@ -56,6 +56,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | This URL is used for CORS configuration to allow requests from your
+    | frontend application. You can specify multiple URLs separated by commas.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'https://sistema-acceso-frontend.onrender.com'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

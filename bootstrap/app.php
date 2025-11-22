@@ -36,19 +36,33 @@ return Application::configure(basePath: dirname(__DIR__))
                     'message' => $e->getMessage(),
                 ], $statusCode);
                 
-                // Agregar headers CORS
+                // Agregar headers CORS - NUNCA usar '*' cuando credentials es true
                 $origin = $request->header('Origin');
-                $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'https://sistema-acceso-frontend.onrender.com'));
+                $frontendUrl = config('app.frontend_url', 'https://sistema-acceso-frontend.onrender.com');
                 
-                if ($origin && (str_contains($frontendUrl, parse_url($origin, PHP_URL_HOST) ?? ''))) {
-                    $response->headers->set('Access-Control-Allow-Origin', $origin);
-                } else {
-                    $response->headers->set('Access-Control-Allow-Origin', $frontendUrl);
+                // Determinar el origen a usar
+                $originToUse = $frontendUrl; // Por defecto
+                
+                if ($origin) {
+                    $originHost = parse_url($origin, PHP_URL_HOST);
+                    $frontendHost = parse_url($frontendUrl, PHP_URL_HOST);
+                    
+                    // Si el origen coincide con el frontend configurado o es de Render, usarlo
+                    if ($originHost && $frontendHost && $originHost === $frontendHost) {
+                        $originToUse = $origin;
+                    } elseif (str_contains($origin, 'onrender.com')) {
+                        // Permitir cualquier origen de Render
+                        $originToUse = $origin;
+                    }
                 }
                 
+                // CRÍTICO: Nunca usar '*' cuando Access-Control-Allow-Credentials es 'true'
+                $response->headers->set('Access-Control-Allow-Origin', $originToUse);
                 $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-                $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+                $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
                 $response->headers->set('Access-Control-Allow-Credentials', 'true');
+                $response->headers->set('Access-Control-Max-Age', '86400');
+                $response->headers->set('Vary', 'Origin');
                 
                 return $response;
             }

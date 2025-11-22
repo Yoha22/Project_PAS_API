@@ -108,11 +108,15 @@ class HandleCors
         }
         
         // Establecer todos los headers CORS
+        // CRÍTICO: Nunca usar '*' cuando Access-Control-Allow-Credentials es 'true'
         $response->headers->set('Access-Control-Allow-Origin', $originToUse);
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
         $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
         $response->headers->set('Access-Control-Allow-Credentials', 'true');
         $response->headers->set('Access-Control-Max-Age', '86400');
+        
+        // Header Vary es importante para que el navegador cachee correctamente las respuestas CORS
+        $response->headers->set('Vary', 'Origin');
         
         return $response;
     }
@@ -147,20 +151,31 @@ class HandleCors
                 'requested_headers' => $request->header('Access-Control-Request-Headers'),
             ]);
             
-            $response = response('', 200);
+            $response = response('', 204); // 204 No Content es más apropiado para OPTIONS
             
-            // Establecer headers CORS para preflight
+            // Determinar el origen a usar - NUNCA usar '*' cuando credentials es true
+            $originToUse = null;
+            
             if ($origin && $this->isOriginAllowed($origin)) {
-                $response->headers->set('Access-Control-Allow-Origin', $origin);
+                $originToUse = $origin;
+            } elseif ($origin && str_contains($origin, 'onrender.com')) {
+                // Permitir cualquier origen de Render para debugging
+                $originToUse = $origin;
             } else {
+                // Usar el primer origen permitido de la configuración
                 $allowedOrigins = $this->getAllowedOrigins();
-                $response->headers->set('Access-Control-Allow-Origin', $allowedOrigins[0] ?? '*');
+                $originToUse = $allowedOrigins[0] ?? 'https://sistema-acceso-frontend.onrender.com';
             }
             
+            // CRÍTICO: Nunca usar '*' cuando Access-Control-Allow-Credentials es 'true'
+            $response->headers->set('Access-Control-Allow-Origin', $originToUse);
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
             $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
             $response->headers->set('Access-Control-Allow-Credentials', 'true');
             $response->headers->set('Access-Control-Max-Age', '86400');
+            
+            // Headers adicionales para mejor compatibilidad
+            $response->headers->set('Vary', 'Origin');
             
             return $response;
         }
