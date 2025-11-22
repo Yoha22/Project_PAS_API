@@ -42,5 +42,9 @@ services:
         sync: false
       - key: APP_KEY
         generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+        # IMPORTANTE: Configura esta variable en Render > Environment
+        # Ejemplo: https://sistema-acceso-frontend.onrender.com
     healthCheckPath: /api/auth/check-admin
 

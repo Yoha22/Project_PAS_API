@@ -25,46 +25,59 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        // Función helper para agregar headers CORS
+        $addCorsHeaders = function ($response, $request) {
+            $origin = $request->header('Origin');
+            $frontendUrl = config('app.frontend_url', 'https://sistema-acceso-frontend.onrender.com');
+            
+            // Determinar el origen a usar
+            $originToUse = $frontendUrl; // Por defecto
+            
+            if ($origin) {
+                $originHost = parse_url($origin, PHP_URL_HOST);
+                $frontendHost = parse_url($frontendUrl, PHP_URL_HOST);
+                
+                // Si el origen coincide con el frontend configurado o es de Render, usarlo
+                if ($originHost && $frontendHost && $originHost === $frontendHost) {
+                    $originToUse = $origin;
+                } elseif (str_contains($origin, 'onrender.com')) {
+                    // Permitir cualquier origen de Render
+                    $originToUse = $origin;
+                }
+            }
+            
+            // CRÍTICO: Nunca usar '*' cuando Access-Control-Allow-Credentials es 'true'
+            $response->headers->set('Access-Control-Allow-Origin', $originToUse);
+            $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
+            $response->headers->set('Access-Control-Allow-Credentials', 'true');
+            $response->headers->set('Access-Control-Max-Age', '86400');
+            $response->headers->set('Vary', 'Origin');
+            
+            return $response;
+        };
+        
         // Asegurar que los headers CORS se agreguen incluso en errores no capturados
-        $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) {
+        $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) use ($addCorsHeaders) {
             // Solo para rutas API
             if ($request->is('api/*')) {
                 $statusCode = method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500;
                 
-                $response = response()->json([
-                    'success' => false,
-                    'message' => $e->getMessage(),
-                ], $statusCode);
-                
-                // Agregar headers CORS - NUNCA usar '*' cuando credentials es true
-                $origin = $request->header('Origin');
-                $frontendUrl = config('app.frontend_url', 'https://sistema-acceso-frontend.onrender.com');
-                
-                // Determinar el origen a usar
-                $originToUse = $frontendUrl; // Por defecto
-                
-                if ($origin) {
-                    $originHost = parse_url($origin, PHP_URL_HOST);
-                    $frontendHost = parse_url($frontendUrl, PHP_URL_HOST);
-                    
-                    // Si el origen coincide con el frontend configurado o es de Render, usarlo
-                    if ($originHost && $frontendHost && $originHost === $frontendHost) {
-                        $originToUse = $origin;
-                    } elseif (str_contains($origin, 'onrender.com')) {
-                        // Permitir cualquier origen de Render
-                        $originToUse = $origin;
-                    }
+                // Manejar excepciones de validación de Laravel
+                if ($e instanceof \Illuminate\Validation\ValidationException) {
+                    $response = response()->json([
+                        'success' => false,
+                        'message' => 'Error de validación',
+                        'errors' => $e->errors(),
+                    ], 422);
+                } else {
+                    $response = response()->json([
+                        'success' => false,
+                        'message' => $e->getMessage(),
+                    ], $statusCode);
                 }
                 
-                // CRÍTICO: Nunca usar '*' cuando Access-Control-Allow-Credentials es 'true'
-                $response->headers->set('Access-Control-Allow-Origin', $originToUse);
-                $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-                $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
-                $response->headers->set('Access-Control-Allow-Credentials', 'true');
-                $response->headers->set('Access-Control-Max-Age', '86400');
-                $response->headers->set('Vary', 'Origin');
-                
-                return $response;
+                return $addCorsHeaders($response, $request);
             }
         });
     })->create();
