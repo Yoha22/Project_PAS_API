@@ -184,19 +184,39 @@ class HandleCors
             // Procesar la petición
             $response = $next($request);
             
-            // Agregar headers CORS a la respuesta exitosa
-            // IMPORTANTE: Hacer esto ANTES de cualquier otra modificación
+            // Determinar el origen a usar en los headers CORS
+            $originToUse = null;
+            
+            if ($origin && $this->isOriginAllowed($origin)) {
+                $originToUse = $origin;
+            } elseif ($origin && str_contains($origin, 'onrender.com')) {
+                // Permitir cualquier origen de Render
+                $originToUse = $origin;
+            } else {
+                // Usar el origen por defecto
+                $allowedOrigins = $this->getAllowedOrigins();
+                $originToUse = $allowedOrigins[0] ?? 'https://sistema-acceso-frontend.onrender.com';
+            }
+            
+            // CRÍTICO: Establecer headers CORS de forma directa y simple
+            // Usar el método helper que ya está probado
             $response = $this->addCorsHeaders($response, $origin);
             
             // Verificar que los headers se agregaron correctamente
             $corsOrigin = $response->headers->get('Access-Control-Allow-Origin');
             if (!$corsOrigin) {
-                // Si no se agregaron, forzar agregarlos de nuevo
-                Log::warning('CORS: Headers no detectados después de agregarlos, forzando agregado', [
+                Log::warning('CORS: Headers no detectados, forzando agregado directo', [
                     'origin' => $origin,
-                    'response_headers' => $response->headers->all(),
+                    'origin_to_use' => $originToUse,
                 ]);
-                $response = $this->addCorsHeaders($response, $origin);
+                
+                // Forzar establecimiento directo de headers
+                $response->headers->set('Access-Control-Allow-Origin', $originToUse);
+                $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+                $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
+                $response->headers->set('Access-Control-Allow-Credentials', 'true');
+                $response->headers->set('Access-Control-Max-Age', '86400');
+                $response->headers->set('Vary', 'Origin');
             }
             
             Log::info('CORS: Headers agregados a respuesta exitosa', [
