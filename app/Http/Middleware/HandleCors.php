@@ -167,15 +167,46 @@ class HandleCors
                 $originToUse = $allowedOrigins[0] ?? 'https://sistema-acceso-frontend.onrender.com';
             }
             
-            // CRÍTICO: Nunca usar '*' cuando Access-Control-Allow-Credentials es 'true'
-            $response->headers->set('Access-Control-Allow-Origin', $originToUse);
-            $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
-            $response->headers->set('Access-Control-Allow-Credentials', 'true');
-            $response->headers->set('Access-Control-Max-Age', '86400');
+            // CRÍTICO: Establecer headers CORS de forma FORZADA
+            // Usar replace() para asegurar que no haya headers conflictivos
+            $corsHeaders = [
+                'Access-Control-Allow-Origin' => $originToUse,
+                'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+                'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN',
+                'Access-Control-Allow-Credentials' => 'true',
+                'Access-Control-Max-Age' => '86400',
+                'Vary' => 'Origin',
+            ];
             
-            // Headers adicionales para mejor compatibilidad
-            $response->headers->set('Vary', 'Origin');
+            // Establecer cada header individualmente para asegurar que se apliquen
+            foreach ($corsHeaders as $key => $value) {
+                $response->headers->set($key, $value, true); // true = replace existing
+            }
+            
+            // Verificar que los headers se establecieron correctamente
+            $finalOrigin = $response->headers->get('Access-Control-Allow-Origin');
+            if ($finalOrigin !== $originToUse) {
+                Log::error('CORS: ERROR - Header Access-Control-Allow-Origin no se estableció correctamente', [
+                    'expected' => $originToUse,
+                    'actual' => $finalOrigin,
+                    'all_headers' => $response->headers->all(),
+                ]);
+                // Forzar de nuevo usando replace
+                $response->headers->remove('Access-Control-Allow-Origin');
+                $response->headers->set('Access-Control-Allow-Origin', $originToUse, true);
+            }
+            
+            Log::info('CORS: Preflight OPTIONS response preparada', [
+                'origin' => $origin,
+                'origin_used' => $originToUse,
+                'final_header' => $response->headers->get('Access-Control-Allow-Origin'),
+                'all_cors_headers' => [
+                    'Access-Control-Allow-Origin' => $response->headers->get('Access-Control-Allow-Origin'),
+                    'Access-Control-Allow-Credentials' => $response->headers->get('Access-Control-Allow-Credentials'),
+                    'Access-Control-Allow-Methods' => $response->headers->get('Access-Control-Allow-Methods'),
+                    'Access-Control-Allow-Headers' => $response->headers->get('Access-Control-Allow-Headers'),
+                ],
+            ]);
             
             return $response;
         }
