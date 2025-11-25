@@ -104,3 +104,5 @@ En ese caso, considerar:
 - El logging detallado ayudará a identificar el problema si persiste
 - El manejo de excepciones asegura headers CORS incluso en errores
 
+
+

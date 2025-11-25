@@ -19,7 +19,6 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\HandleCors::class,
         ]);
         
-        // Registrar CORS como middleware global para asegurar que se ejecute en todas las rutas API
         $middleware->api(prepend: [
             \App\Http\Middleware\HandleCors::class,
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
