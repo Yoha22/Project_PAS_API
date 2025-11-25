@@ -58,9 +58,12 @@ return Application::configure(basePath: dirname(__DIR__))
         };
         
         // Asegurar que los headers CORS se agreguen incluso en errores no capturados
+        // IMPORTANTE: Este handler se ejecuta ANTES que el middleware, así que es crítico para CORS
         $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) use ($addCorsHeaders) {
             // Solo para rutas API
             if ($request->is('api/*')) {
+                $origin = $request->header('Origin');
+                
                 // Obtener código de estado de forma segura
                 $statusCode = 500;
                 if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpException) {
@@ -83,7 +86,26 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], $statusCode);
                 }
                 
-                return $addCorsHeaders($response, $request);
+                // Agregar headers CORS - CRÍTICO
+                $response = $addCorsHeaders($response, $request);
+                
+                // Verificar que los headers estén presentes
+                if (!$response->headers->get('Access-Control-Allow-Origin')) {
+                    // Forzar agregado si no están presentes
+                    $frontendUrl = config('app.frontend_url', 'https://sistema-acceso-frontend.onrender.com');
+                    $originToUse = $origin && str_contains($origin, 'onrender.com') 
+                        ? $origin 
+                        : $frontendUrl;
+                    
+                    $response->headers->set('Access-Control-Allow-Origin', $originToUse);
+                    $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+                    $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
+                    $response->headers->set('Access-Control-Allow-Credentials', 'true');
+                    $response->headers->set('Access-Control-Max-Age', '86400');
+                    $response->headers->set('Vary', 'Origin');
+                }
+                
+                return $response;
             }
         });
     })->create();

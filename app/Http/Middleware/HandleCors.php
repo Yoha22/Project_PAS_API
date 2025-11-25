@@ -231,8 +231,38 @@ class HandleCors
             ]);
             
             return $response;
+        } catch (\Illuminate\Validation\ValidationException $e) {            
+            Log::warning('CORS: ValidationException capturada, agregando headers CORS', [
+                'origin' => $origin,
+                'errors' => $e->errors(),
+            ]);
+            
+            $response = response()->json([
+                'success' => false,
+                'message' => 'Error de validación',
+                'errors' => $e->errors(),
+            ], 422);
+            
+            // Agregar headers CORS
+            $response = $this->addCorsHeaders($response, $origin);
+            
+            // Verificar y forzar headers si es necesario
+            if (!$response->headers->get('Access-Control-Allow-Origin')) {
+                $originToUse = $origin && $this->isOriginAllowed($origin) 
+                    ? $origin 
+                    : ($this->getAllowedOrigins()[0] ?? 'https://sistema-acceso-frontend.onrender.com');
+                
+                $response->headers->set('Access-Control-Allow-Origin', $originToUse);
+                $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+                $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
+                $response->headers->set('Access-Control-Allow-Credentials', 'true');
+                $response->headers->set('Access-Control-Max-Age', '86400');
+                $response->headers->set('Vary', 'Origin');
+            }
+            
+            return $response;
         } catch (\Throwable $e) {
-            // Capturar excepciones y asegurar que los headers CORS se agreguen incluso en errores
+            // Capturar otras excepciones y asegurar que los headers CORS se agreguen
             Log::error('CORS: Excepción capturada, agregando headers CORS', [
                 'exception' => get_class($e),
                 'message' => $e->getMessage(),
