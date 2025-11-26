@@ -18,6 +18,7 @@ public:
     useHTTPS = config->useHTTPS;
     if (useHTTPS) {
       clientSecure.setInsecure(); // Para desarrollo, en producción usar certificados
+      clientSecure.setTimeout(30000); // Timeout de 30 segundos para conexiones HTTPS
     }
   }
   
@@ -28,16 +29,37 @@ public:
     Serial.println(url);
     
     if (useHTTPS) {
-      if (!clientSecure.connect(extractHost(url).c_str(), config->serverPort)) {
-        Serial.println("Error de conexión HTTPS");
+      String host = extractHost(url);
+      Serial.print("Conectando a HTTPS: ");
+      Serial.print(host);
+      Serial.print(":");
+      Serial.println(config->serverPort);
+      
+      unsigned long connectStart = millis();
+      bool connected = clientSecure.connect(host.c_str(), config->serverPort);
+      unsigned long connectTime = millis() - connectStart;
+      
+      if (!connected) {
+        Serial.print("Error de conexión HTTPS después de ");
+        Serial.print(connectTime);
+        Serial.println(" ms");
+        Serial.print("Host: ");
+        Serial.println(host);
+        Serial.print("Puerto: ");
+        Serial.println(config->serverPort);
+        clientSecure.stop();
         return "";
       }
+      
+      Serial.print("Conectado exitosamente en ");
+      Serial.print(connectTime);
+      Serial.println(" ms");
       
       clientSecure.print("GET ");
       clientSecure.print(extractPath(url).c_str());
       clientSecure.println(" HTTP/1.1");
       clientSecure.print("Host: ");
-      clientSecure.println(extractHost(url).c_str());
+      clientSecure.println(host);
       if (useAuth) {
         clientSecure.print("Authorization: Bearer ");
         clientSecure.println(config->deviceToken);
@@ -75,16 +97,37 @@ public:
     Serial.println(url);
     
     if (useHTTPS) {
-      if (!clientSecure.connect(extractHost(url).c_str(), config->serverPort)) {
-        Serial.println("Error de conexión HTTPS");
+      String host = extractHost(url);
+      Serial.print("Conectando a HTTPS: ");
+      Serial.print(host);
+      Serial.print(":");
+      Serial.println(config->serverPort);
+      
+      unsigned long connectStart = millis();
+      bool connected = clientSecure.connect(host.c_str(), config->serverPort);
+      unsigned long connectTime = millis() - connectStart;
+      
+      if (!connected) {
+        Serial.print("Error de conexión HTTPS después de ");
+        Serial.print(connectTime);
+        Serial.println(" ms");
+        Serial.print("Host: ");
+        Serial.println(host);
+        Serial.print("Puerto: ");
+        Serial.println(config->serverPort);
+        clientSecure.stop();
         return "";
       }
+      
+      Serial.print("Conectado exitosamente en ");
+      Serial.print(connectTime);
+      Serial.println(" ms");
       
       clientSecure.print("POST ");
       clientSecure.print(extractPath(url).c_str());
       clientSecure.println(" HTTP/1.1");
       clientSecure.print("Host: ");
-      clientSecure.println(extractHost(url).c_str());
+      clientSecure.println(host);
       clientSecure.println("Content-Type: application/json");
       if (useAuth) {
         clientSecure.print("Authorization: Bearer ");
@@ -125,13 +168,33 @@ private:
   String readResponse(Client* stream) {
     String response = "";
     unsigned long timeout = millis();
+    unsigned long readStart = millis();
+    const unsigned long READ_TIMEOUT = 30000; // 30 segundos para leer respuesta
     
-    while (stream->connected() && millis() - timeout < 10000) { // Aumentar timeout a 10s
-      while (stream->available()) {
+    Serial.println("Esperando respuesta del servidor...");
+    
+    while (stream->connected() && millis() - timeout < READ_TIMEOUT) {
+      if (stream->available()) {
         char c = stream->read();
         response += c;
+        timeout = millis(); // Resetear timeout cuando hay datos
+      } else {
+        delay(10); // Pequeño delay cuando no hay datos disponibles
+        yield(); // Mantener el sistema responsive
+      }
+      
+      // Verificar si ha pasado mucho tiempo sin datos
+      if (millis() - timeout > 5000 && response.length() == 0) {
+        Serial.println("Timeout esperando datos del servidor");
+        break;
       }
     }
+    
+    unsigned long readTime = millis() - readStart;
+    Serial.print("Tiempo de lectura: ");
+    Serial.print(readTime);
+    Serial.print(" ms, Bytes recibidos: ");
+    Serial.println(response.length());
     
     // Verificar si la respuesta está en formato chunked
     bool isChunked = response.indexOf("Transfer-Encoding: chunked") >= 0 || 
@@ -228,13 +291,21 @@ private:
   }
   
   String extractHost(const String& url) {
-    // Extraer host de URL (ej: http://192.168.1.100 -> 192.168.1.100)
+    // Extraer host de URL (ej: https://project-pas-api.onrender.com -> project-pas-api.onrender.com)
     int start = url.indexOf("://");
     if (start < 0) return url;
     start += 3;
+    
+    // Buscar el primer "/" después del protocolo
     int end = url.indexOf("/", start);
-    if (end < 0) end = url.indexOf(":", start);
-    if (end < 0) return url.substring(start);
+    if (end < 0) {
+      // No hay path, buscar ":" para puerto o usar el final
+      int portPos = url.indexOf(":", start);
+      if (portPos < 0) {
+        return url.substring(start); // No hay puerto ni path
+      }
+      return url.substring(start, portPos);
+    }
     return url.substring(start, end);
   }
   

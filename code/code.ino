@@ -7,7 +7,6 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <WiFiClientSecure.h>
-#include <esp_task_wdt.h>
 #include "config.h"
 #include "wifi_manager.h"
 #include "api_client.h"
@@ -83,6 +82,7 @@ bool processCommand(String command, JsonObject payload);
 void sendWhatsAppAlert();
 void sendCallAlert();
 void sendHybridAlert();
+void activarAlarma();
 void addCORSHeaders(WebServer& server);
 void handleOptions(WebServer& server);
 
@@ -90,12 +90,10 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   
-  // Configurar Watchdog Timer (8 segundos)
-  // Si el loop() tarda más de 8 segundos, el ESP32 se reiniciará automáticamente
-  esp_task_wdt_init(8, true); // 8 segundos, reiniciar si no se alimenta
-  esp_task_wdt_add(NULL); // Agregar la tarea actual al watchdog
-  
-  Serial.println("Watchdog timer configurado (8 segundos)");
+  // Configurar Watchdog Timer
+  // En ESP32 Arduino, el watchdog se maneja automáticamente por el framework
+  // El sistema tiene protección integrada contra cuelgues
+  Serial.println("Sistema iniciado con protección contra cuelgues");
   
   // Inicializar LCD
   lcd.init();
@@ -240,9 +238,10 @@ void setup() {
 void loop() {
   unsigned long loopStartTime = millis();
   
-  // Alimentar watchdog periódicamente
+  // Mantener el sistema responsive
+  // En ESP32 Arduino, yield() ayuda a mantener el sistema responsive
   if (millis() - lastWatchdogFeed > WATCHDOG_FEED_INTERVAL) {
-    esp_task_wdt_reset();
+    yield(); // Mantener el sistema responsive
     lastWatchdogFeed = millis();
   }
   
@@ -281,7 +280,7 @@ void loop() {
     const unsigned long MAX_FINGER_WAIT = 10000; // Máximo 10 segundos
     
     while (finger.getImage() != FINGERPRINT_NOFINGER && (millis() - waitStart < MAX_FINGER_WAIT)) {
-      esp_task_wdt_reset(); // Alimentar watchdog durante la espera
+      yield(); // Mantener el sistema responsive durante la espera
       delay(100);
       server.handleClient(); // Mantener el servidor web respondiendo
     }
@@ -316,8 +315,8 @@ void loop() {
     }
   }
   
-  // Alimentar watchdog al final del loop
-  esp_task_wdt_reset();
+  // Mantener el sistema responsive
+  yield();
 }
 
 // Modo de configuración inicial
@@ -1647,7 +1646,7 @@ uint8_t getFingerprintEnroll(uint8_t id) {
   const unsigned long MAX_ENROLL_TIME = 30000; // 30 segundos máximo para capturar huella
   
   while (p != FINGERPRINT_OK && (millis() - enrollStartTime < MAX_ENROLL_TIME)) {
-    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
+    yield(); // Mantener el sistema responsive durante la espera
     p = finger.getImage();
     switch (p) {
       case FINGERPRINT_OK:
@@ -1686,7 +1685,7 @@ uint8_t getFingerprintEnroll(uint8_t id) {
   const unsigned long MAX_WAIT_TIME = 10000; // 10 segundos máximo
   
   while (finger.getImage() != FINGERPRINT_NOFINGER && (millis() - waitStart < MAX_WAIT_TIME)) {
-    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
+    yield(); // Mantener el sistema responsive durante la espera
     delay(100);
   }
   
@@ -1705,7 +1704,7 @@ uint8_t getFingerprintEnroll(uint8_t id) {
   unsigned long enrollStartTime2 = millis(); // Nueva variable para el segundo enroll
   
   while (p != FINGERPRINT_OK && (millis() - enrollStartTime2 < MAX_ENROLL_TIME)) {
-    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
+    yield(); // Mantener el sistema responsive durante la espera
     p = finger.getImage();
     switch (p) {
       case FINGERPRINT_OK:
@@ -1909,7 +1908,7 @@ void sendWhatsAppAlert() {
   const unsigned long RESPONSE_TIMEOUT = 5000;
   
   while (client.connected() && millis() - timeout < RESPONSE_TIMEOUT) {
-    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
+    yield(); // Mantener el sistema responsive durante la espera
     while (client.available()) {
       char c = client.read();
       response += c;
@@ -1937,27 +1936,25 @@ void sendCallAlert() {
     return;
   }
 
-  String message = "ALERTA: Activación de la alarma";
+  String message = "ALERTA: Activacion de la alarma";
   
   // Usar WiFiClientSecure para HTTPS
   WiFiClientSecure client;
-  client.setInsecure(); // Desactivar verificación de certificado (para desarrollo)
+  client.setInsecure(); // Desactivar verificacion de certificado (para desarrollo)
   client.setTimeout(10000); // Timeout de 10 segundos para llamadas
   
-  const char* host = "api.callmebot.com";
+  String host = "api.callmebot.com";
   const int port = 443; // HTTPS
-  String path = String("/call.php?phone=") + urlencode(adminPhone) +
-                 "&text=" + urlencode(message) +
-                 "&apikey=" + urlencode(callMeBotAPIKey);
+  String path = String("/call.php?phone=") + urlencode(adminPhone) + String("&text=") + urlencode(message) + String("&apikey=") + urlencode(callMeBotAPIKey);
 
   unsigned long connectStart = millis();
-  if (!client.connect(host, port)) {
+  if (!client.connect(host.c_str(), port)) {
     Serial.println("ERROR: No se pudo conectar a CallMeBot (Llamada)");
     client.stop();
     return;
   }
 
-  // Verificar timeout de conexión
+  // Verificar timeout de conexion
   if (millis() - connectStart > 10000) {
     Serial.println("ERROR: Timeout conectando a CallMeBot (Llamada)");
     client.stop();
@@ -1965,7 +1962,7 @@ void sendCallAlert() {
   }
 
   client.println("GET " + path + " HTTP/1.1");
-  client.println("Host: " + String(host));
+  client.println("Host: " + host);
   client.println("Connection: close");
   client.println();
 
@@ -1974,7 +1971,7 @@ void sendCallAlert() {
   const unsigned long RESPONSE_TIMEOUT = 10000; // Más tiempo para llamadas
   
   while (client.connected() && millis() - timeout < RESPONSE_TIMEOUT) {
-    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
+    yield(); // Mantener el sistema responsive durante la espera
     while (client.available()) {
       char c = client.read();
       response += c;

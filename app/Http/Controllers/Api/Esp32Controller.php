@@ -497,7 +497,26 @@ class Esp32Controller extends Controller
         ]);
 
         $esp32Ip = $validated['ip'];
-        $url = "http://{$esp32Ip}/registrarHuella";
+        
+        // Verificar si hay una URL de túnel configurada (ngrok, Cloudflare Tunnel, etc.)
+        $tunnelUrl = env('ESP32_TUNNEL_URL');
+        
+        if ($tunnelUrl && filter_var($tunnelUrl, FILTER_VALIDATE_URL)) {
+            // Usar túnel si está configurado
+            $url = rtrim($tunnelUrl, '/') . "/registrarHuella";
+            Log::info('[ESP32-PROXY] Usando túnel para conectar al ESP32', [
+                'tunnel_url' => $tunnelUrl,
+                'final_url' => $url
+            ]);
+        } else {
+            // Usar IP local directa
+            $url = "http://{$esp32Ip}/registrarHuella";
+            Log::info('[ESP32-PROXY] Usando IP local para conectar al ESP32', [
+                'ip' => $esp32Ip,
+                'final_url' => $url
+            ]);
+        }
+        
         $timeout = 35; // segundos (tiempo suficiente para capturar huella)
 
         try {
