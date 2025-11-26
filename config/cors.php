@@ -24,6 +24,7 @@ return [
 
     'allowed_origins' => [
         'https://sistema-acceso-frontend.onrender.com',
+        'https://project-pas-app-web.onrender.com',
     ],
 
     'allowed_origins_patterns' => [],

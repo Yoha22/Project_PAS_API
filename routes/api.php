@@ -46,6 +46,17 @@ Route::get('/ping', function (Request $request) {
     ]);
 });
 
+// Ruta de health check (pública) - responde muy rápido sin consultas a BD
+Route::get('/health', function (Request $request) {
+    return response()->json([
+        'success' => true,
+        'status' => 'online',
+        'timestamp' => now()->toIso8601String(),
+        'service' => 'Project PAS API',
+        'version' => '1.0.0',
+    ], 200);
+});
+
 // Ruta de diagnóstico CORS (pública)
 Route::get('/cors-test', function (Request $request) {
     $origin = $request->header('Origin');
