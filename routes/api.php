@@ -76,6 +76,33 @@ Route::get('/debug/auth', function (Request $request) {
 
 // Rutas de autenticación (públicas)
 Route::prefix('auth')->group(function () {
+    // Fallback OPTIONS para preflight - debe estar ANTES de las rutas POST/GET
+    Route::options('/{any}', function (Request $request) {
+        $origin = $request->header('Origin');
+        $allowedOrigins = config('cors.allowed_origins', []);
+        
+        $isOriginAllowed = false;
+        if ($origin) {
+            foreach ($allowedOrigins as $allowedOrigin) {
+                if ($origin === $allowedOrigin || 
+                    parse_url($origin, PHP_URL_HOST) === parse_url($allowedOrigin, PHP_URL_HOST)) {
+                    $isOriginAllowed = true;
+                    break;
+                }
+            }
+        }
+        
+        $originToUse = $isOriginAllowed ? $origin : ($allowedOrigins[0] ?? '*');
+        
+        return response('', 204)
+            ->header('Access-Control-Allow-Origin', $originToUse)
+            ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
+            ->header('Access-Control-Allow-Headers', '*')
+            ->header('Access-Control-Allow-Credentials', 'false')
+            ->header('Access-Control-Max-Age', '0')
+            ->header('Vary', 'Origin');
+    })->where('any', '.*');
+    
     Route::get('/check-admin', [AuthController::class, 'checkAdmin']);
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
