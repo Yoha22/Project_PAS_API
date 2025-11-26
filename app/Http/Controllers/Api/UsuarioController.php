@@ -6,18 +6,34 @@ use App\Http\Controllers\Controller;
 use App\Models\HuellaTemporal;
 use App\Models\Usuario;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class UsuarioController extends Controller
 {
     public function index(Request $request)
     {
-        $perPage = $request->get('per_page', 5);
-        $usuarios = Usuario::paginate($perPage);
-        
-        return response()->json([
-            'success' => true,
-            'data' => $usuarios,
-        ]);
+        try {
+            $perPage = $request->get('per_page', 5);
+            $usuarios = Usuario::paginate($perPage);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $usuarios,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error en UsuarioController::index', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'request' => $request->all(),
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener usuarios',
+                'error' => config('app.debug') ? $e->getMessage() : 'Error interno del servidor'
+            ], 500);
+        }
     }
 
     public function store(Request $request)

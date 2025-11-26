@@ -5,17 +5,33 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Alarma;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AlarmaController extends Controller
 {
     public function index(Request $request)
     {
-        $alarmas = Alarma::orderBy('fecha_hora', 'desc')->paginate(15);
-        
-        return response()->json([
-            'success' => true,
-            'data' => $alarmas,
-        ]);
+        try {
+            $alarmas = Alarma::orderBy('fecha_hora', 'desc')->paginate(15);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $alarmas,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error en AlarmaController::index', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'request' => $request->all(),
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener alarmas',
+                'error' => config('app.debug') ? $e->getMessage() : 'Error interno del servidor'
+            ], 500);
+        }
     }
 
     public function store(Request $request)
