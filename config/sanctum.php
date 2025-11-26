@@ -15,12 +15,9 @@ return [
     |
     */
 
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
-        '%s%s',
-        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1,sistema-acceso-frontend.onrender.com,project-pas-app-web.onrender.com',
-        Sanctum::currentApplicationUrlWithPort(),
-        // Sanctum::currentRequestHost(),
-    ))),
+    // Deshabilitado: No usamos modo stateful (SPA con cookies)
+    // Solo usamos tokens Bearer para autenticación
+    'stateful' => [],
 
     /*
     |--------------------------------------------------------------------------

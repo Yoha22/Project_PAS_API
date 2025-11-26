@@ -15,9 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         // Laravel 11 incluye CORS nativo (\Illuminate\Http\Middleware\HandleCors)
         // Se ejecuta automáticamente para las rutas configuradas en config/cors.php
-        $middleware->api(prepend: [
-            \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
-        ]);
+        // NO usamos EnsureFrontendRequestsAreStateful porque no queremos modo SPA con cookies
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // El middleware CORS nativo de Laravel 11 maneja automáticamente los headers CORS
