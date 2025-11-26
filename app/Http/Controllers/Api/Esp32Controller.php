@@ -483,6 +483,24 @@ class Esp32Controller extends Controller
     }
 
     /**
+     * Verificar configuración del túnel (endpoint de diagnóstico)
+     * GET /api/esp32-proxy/tunnel-status
+     */
+    public function getTunnelStatus()
+    {
+        $tunnelUrl = env('ESP32_TUNNEL_URL');
+        $isConfigured = !empty($tunnelUrl) && filter_var($tunnelUrl, FILTER_VALIDATE_URL);
+        
+        return response()->json([
+            'tunnel_configured' => $isConfigured,
+            'tunnel_url' => $isConfigured ? $tunnelUrl : null,
+            'message' => $isConfigured 
+                ? 'Túnel configurado correctamente' 
+                : 'Túnel no configurado. Usando IP local.',
+        ]);
+    }
+
+    /**
      * Proxy para registrar huella en el ESP32
      * GET /api/esp32-proxy/registrar-huella
      */
@@ -490,6 +508,7 @@ class Esp32Controller extends Controller
     {
         Log::info('[ESP32-PROXY] proxyRegistrarHuella iniciado', [
             'ip' => $request->input('ip'),
+            'tunnel_url_configured' => !empty(env('ESP32_TUNNEL_URL')),
         ]);
 
         $validated = $request->validate([
