@@ -229,31 +229,71 @@ class HandleCors
                 $originToUse = $allowedOrigins[0] ?? 'https://sistema-acceso-frontend.onrender.com';
             }
             
-            // CRÍTICO: Establecer headers CORS de forma directa y simple
-            // Usar el método helper que ya está probado
-            $response = $this->addCorsHeaders($response, $origin);
+            // CRÍTICO: Establecer headers CORS de forma FORZADA
+            // Primero eliminar cualquier header CORS existente que pueda estar mal configurado
+            $response->headers->remove('Access-Control-Allow-Origin');
+            $response->headers->remove('Access-Control-Allow-Methods');
+            $response->headers->remove('Access-Control-Allow-Headers');
+            $response->headers->remove('Access-Control-Allow-Credentials');
+            $response->headers->remove('Access-Control-Max-Age');
             
-            // Verificar que los headers se agregaron correctamente
-            $corsOrigin = $response->headers->get('Access-Control-Allow-Origin');
-            if (!$corsOrigin) {
-                Log::warning('CORS: Headers no detectados, forzando agregado directo', [
-                    'origin' => $origin,
-                    'origin_to_use' => $originToUse,
+            // Establecer headers CORS correctos de forma forzada
+            $corsHeaders = [
+                'Access-Control-Allow-Origin' => $originToUse,
+                'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+                'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN',
+                'Access-Control-Allow-Credentials' => 'true',
+                'Access-Control-Max-Age' => '86400',
+                'Vary' => 'Origin',
+            ];
+            
+            // Establecer cada header individualmente con replace forzado
+            foreach ($corsHeaders as $key => $value) {
+                $response->headers->set($key, $value, true); // true = replace existing
+            }
+            
+            // Verificar que los headers se establecieron correctamente
+            $finalOrigin = $response->headers->get('Access-Control-Allow-Origin');
+            if ($finalOrigin === '*' || $finalOrigin !== $originToUse) {
+                Log::error('CORS: ERROR CRÍTICO - Header Access-Control-Allow-Origin incorrecto', [
+                    'expected' => $originToUse,
+                    'actual' => $finalOrigin,
+                    'is_wildcard' => $finalOrigin === '*',
+                    'all_headers' => $response->headers->all(),
                 ]);
                 
-                // Forzar establecimiento directo de headers
-                $response->headers->set('Access-Control-Allow-Origin', $originToUse);
-                $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-                $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-XSRF-TOKEN');
-                $response->headers->set('Access-Control-Allow-Credentials', 'true');
-                $response->headers->set('Access-Control-Max-Age', '86400');
-                $response->headers->set('Vary', 'Origin');
+                // Forzar de nuevo eliminando y reestableciendo
+                $response->headers->remove('Access-Control-Allow-Origin');
+                $response->headers->set('Access-Control-Allow-Origin', $originToUse, true);
+                
+                // Verificar de nuevo
+                $finalOrigin = $response->headers->get('Access-Control-Allow-Origin');
+                if ($finalOrigin === '*' || $finalOrigin !== $originToUse) {
+                    Log::error('CORS: ERROR CRÍTICO - No se pudo establecer Access-Control-Allow-Origin correctamente después de múltiples intentos', [
+                        'expected' => $originToUse,
+                        'actual' => $finalOrigin,
+                    ]);
+                }
+            }
+            
+            // Verificación final CRÍTICA: Asegurar que el header no sea '*'
+            $finalCheck = $response->headers->get('Access-Control-Allow-Origin');
+            if ($finalCheck === '*') {
+                Log::error('CORS: ERROR CRÍTICO - Cloudflare o proxy está cambiando Access-Control-Allow-Origin a *', [
+                    'origin' => $origin,
+                    'origin_to_use' => $originToUse,
+                    'final_header' => $finalCheck,
+                ]);
+                // Intentar forzar de nuevo
+                $response->headers->remove('Access-Control-Allow-Origin');
+                $response->headers->set('Access-Control-Allow-Origin', $originToUse, true);
             }
             
             Log::info('CORS: Headers agregados a respuesta exitosa', [
                 'status' => $response->getStatusCode(),
                 'origin' => $origin,
                 'origin_used_in_header' => $response->headers->get('Access-Control-Allow-Origin'),
+                'is_wildcard' => $response->headers->get('Access-Control-Allow-Origin') === '*',
                 'all_cors_headers' => [
                     'Access-Control-Allow-Origin' => $response->headers->get('Access-Control-Allow-Origin'),
                     'Access-Control-Allow-Credentials' => $response->headers->get('Access-Control-Allow-Credentials'),
