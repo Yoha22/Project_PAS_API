@@ -201,6 +201,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('dispositivos/{id}', [Esp32Controller::class, 'destroy']);
     Route::post('dispositivos/generate-code', [Esp32Controller::class, 'generateCode']);
     Route::post('dispositivos/{id}/revoke-token', [Esp32Controller::class, 'revokeToken']);
+    
+    // Proxy para configuración ESP32
+    Route::get('esp32/config-html', [Esp32Controller::class, 'getConfigHtml']);
+    Route::post('esp32/config', [Esp32Controller::class, 'postConfig']);
+    Route::post('esp32/activate-config-mode', [Esp32Controller::class, 'activateConfigMode']);
 });
 
 // Rutas ESP32 (públicas para registro, protegidas con token de dispositivo para el resto)

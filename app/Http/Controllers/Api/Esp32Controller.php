@@ -15,6 +15,8 @@ use App\Models\HuellaTemporal;
 use App\Models\Usuario;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class Esp32Controller extends Controller
 {
@@ -409,5 +411,244 @@ class Esp32Controller extends Controller
             'message' => 'Token revocado exitosamente. El dispositivo quedó inactivo.',
             'data' => $dispositivo,
         ]);
+    }
+
+    /**
+     * Obtener HTML del portal de configuración del ESP32
+     * GET /api/esp32/config-html
+     */
+    public function getConfigHtml(Request $request)
+    {
+        Log::info('[ESP32-PROXY] getConfigHtml iniciado', [
+            'ip' => $request->input('ip', '192.168.4.1'),
+        ]);
+
+        $esp32Ip = $request->input('ip', '192.168.4.1');
+        $url = "http://{$esp32Ip}/";
+        $timeout = 10; // segundos
+
+        try {
+            Log::info('[ESP32-PROXY] Intentando conectar a ESP32', ['url' => $url]);
+
+            $response = Http::timeout($timeout)
+                ->connectTimeout(5)
+                ->withOptions(['verify' => false])
+                ->withHeaders([
+                    'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                ])
+                ->get($url);
+
+            if ($response->successful()) {
+                $html = $response->body();
+
+                Log::info('[ESP32-PROXY] Respuesta recibida', [
+                    'status_code' => $response->status(),
+                    'html_length' => strlen($html),
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'html' => $html,
+                    'ip' => $esp32Ip,
+                ], 200);
+            } else {
+                throw new \Exception("HTTP {$response->status()}: {$response->body()}");
+            }
+
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('[ESP32-PROXY] Error de conexión', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo conectar con el ESP32. Verifica que esté en modo configuración y accesible en ' . $esp32Ip,
+                'details' => $e->getMessage(),
+            ], 503);
+
+        } catch (\Exception $e) {
+            Log::error('[ESP32-PROXY] Error inesperado', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al obtener HTML del ESP32',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Enviar configuración al ESP32
+     * POST /api/esp32/config
+     */
+    public function postConfig(Request $request)
+    {
+        Log::info('[ESP32-PROXY] postConfig iniciado', [
+            'data' => $request->except(['password']), // No loguear password
+        ]);
+
+        $validated = $request->validate([
+            'ssid' => 'required|string|max:100',
+            'password' => 'required|string|max:100',
+            'serverUrl' => 'required|string|url|max:255',
+            'useHTTPS' => 'boolean',
+            'codigo' => 'required|string|max:50',
+            'nombre' => 'required|string|max:100',
+            'ip' => 'string|ip', // IP del ESP32
+        ]);
+
+        $esp32Ip = $request->input('ip', '192.168.4.1');
+        $url = "http://{$esp32Ip}/config";
+        $timeout = 30; // segundos (más tiempo para procesar configuración)
+
+        try {
+            $formData = [
+                'ssid' => $validated['ssid'],
+                'password' => $validated['password'],
+                'serverUrl' => $validated['serverUrl'],
+                'useHTTPS' => $request->input('useHTTPS', '0'),
+                'codigo' => $validated['codigo'],
+                'nombre' => $validated['nombre'],
+            ];
+
+            Log::info('[ESP32-PROXY] Enviando configuración al ESP32', [
+                'url' => $url,
+                'data' => array_merge($formData, ['password' => '***']),
+            ]);
+
+            $response = Http::timeout($timeout)
+                ->connectTimeout(10)
+                ->withOptions(['verify' => false])
+                ->asForm()
+                ->post($url, $formData);
+
+            $statusCode = $response->status();
+            $responseBody = $response->body();
+
+            Log::info('[ESP32-PROXY] Respuesta del ESP32', [
+                'status_code' => $statusCode,
+                'response' => $responseBody,
+            ]);
+
+            if ($response->successful()) {
+                // Intentar parsear como JSON
+                $jsonResponse = json_decode($responseBody, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    return response()->json($jsonResponse, $statusCode);
+                }
+
+                // Si no es JSON, retornar como texto
+                return response()->json([
+                    'success' => true,
+                    'message' => $responseBody,
+                ], $statusCode);
+            } else {
+                throw new \Exception("HTTP {$statusCode}: {$responseBody}");
+            }
+
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('[ESP32-PROXY] Error de conexión al enviar configuración', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo conectar con el ESP32. Verifica que esté en modo configuración.',
+                'details' => $e->getMessage(),
+            ], 503);
+
+        } catch (\Exception $e) {
+            Log::error('[ESP32-PROXY] Error inesperado al enviar configuración', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al enviar configuración al ESP32',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Activar modo configuración en el ESP32
+     * POST /api/esp32/activate-config-mode
+     */
+    public function activateConfigMode(Request $request)
+    {
+        Log::info('[ESP32-PROXY] activateConfigMode iniciado', [
+            'ip' => $request->input('ip'),
+        ]);
+
+        $validated = $request->validate([
+            'ip' => 'required|string|ip', // IP actual del ESP32 (no en modo config)
+        ]);
+
+        $esp32Ip = $validated['ip'];
+        $url = "http://{$esp32Ip}/reconfig";
+        $timeout = 10;
+
+        try {
+            Log::info('[ESP32-PROXY] Intentando activar modo configuración', ['url' => $url]);
+
+            $response = Http::timeout($timeout)
+                ->connectTimeout(5)
+                ->withOptions(['verify' => false])
+                ->post($url);
+
+            $statusCode = $response->status();
+            $responseBody = $response->body();
+
+            Log::info('[ESP32-PROXY] Respuesta de activación', [
+                'status_code' => $statusCode,
+                'response' => $responseBody,
+            ]);
+
+            if ($response->successful()) {
+                $jsonResponse = json_decode($responseBody, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    return response()->json($jsonResponse, $statusCode);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $responseBody,
+                ], $statusCode);
+            } else {
+                throw new \Exception("HTTP {$statusCode}: {$responseBody}");
+            }
+
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('[ESP32-PROXY] Error de conexión al activar modo config', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo conectar con el ESP32. Verifica que esté encendido y en la misma red.',
+                'details' => $e->getMessage(),
+            ], 503);
+
+        } catch (\Exception $e) {
+            Log::error('[ESP32-PROXY] Error al activar modo configuración', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al activar modo configuración. El ESP32 puede estar ya en modo configuración o no ser accesible.',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
     }
 }
