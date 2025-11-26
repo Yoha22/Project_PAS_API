@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <WiFiClientSecure.h>
+#include <esp_task_wdt.h>
 #include "config.h"
 #include "wifi_manager.h"
 #include "api_client.h"
@@ -61,6 +62,14 @@ String currentPassword = "";
 int currentUserID = 0;
 String currentUserName = "";
 
+// Variables para manejo de errores y watchdog
+unsigned long lastWatchdogFeed = 0;
+const unsigned long WATCHDOG_FEED_INTERVAL = 3000; // Alimentar watchdog cada 3 segundos
+unsigned long lastLoopTime = 0;
+const unsigned long MAX_LOOP_TIME = 10000; // Máximo 10 segundos por iteración de loop
+int errorCount = 0;
+const int MAX_ERRORS_BEFORE_RESTART = 50; // Reiniciar si hay más de 50 errores consecutivos
+
 // Declaraciones forward de funciones
 void handleGetConfig();
 void handleReconfig();
@@ -71,12 +80,22 @@ void handleCommand();
 void handleStatus();
 void handleControl();
 bool processCommand(String command, JsonObject payload);
+void sendWhatsAppAlert();
+void sendCallAlert();
+void sendHybridAlert();
 void addCORSHeaders(WebServer& server);
 void handleOptions(WebServer& server);
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
+  
+  // Configurar Watchdog Timer (8 segundos)
+  // Si el loop() tarda más de 8 segundos, el ESP32 se reiniciará automáticamente
+  esp_task_wdt_init(8, true); // 8 segundos, reiniciar si no se alimenta
+  esp_task_wdt_add(NULL); // Agregar la tarea actual al watchdog
+  
+  Serial.println("Watchdog timer configurado (8 segundos)");
   
   // Inicializar LCD
   lcd.init();
@@ -93,10 +112,34 @@ void setup() {
     lcd.setCursor(0, 1);
     lcd.print("Sensor OK");
   } else {
-    Serial.println("No se pudo encontrar el sensor de huellas :(");
-    lcd.setCursor(0, 1);
+    Serial.println("ERROR CRÍTICO: No se pudo encontrar el sensor de huellas");
+    lcd.clear();
+    lcd.setCursor(0, 0);
     lcd.print("Sensor ERROR");
-    while (1);
+    lcd.setCursor(0, 1);
+    lcd.print("Reiniciando...");
+    
+    // Intentar verificar el sensor varias veces antes de reiniciar
+    delay(2000);
+    for (int i = 0; i < 3; i++) {
+      Serial.print("Reintento de verificación del sensor: ");
+      Serial.println(i + 1);
+      if (finger.verifyPassword()) {
+        Serial.println("Sensor encontrado en reintento!");
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Sensor OK");
+        break;
+      }
+      delay(1000);
+    }
+    
+    // Si después de los reintentos no funciona, reiniciar
+    if (!finger.verifyPassword()) {
+      Serial.println("Sensor no encontrado después de reintentos. Reiniciando...");
+      delay(2000);
+      ESP.restart();
+    }
   }
   
   delay(1000);
@@ -195,7 +238,35 @@ void setup() {
 }
 
 void loop() {
+  unsigned long loopStartTime = millis();
+  
+  // Alimentar watchdog periódicamente
+  if (millis() - lastWatchdogFeed > WATCHDOG_FEED_INTERVAL) {
+    esp_task_wdt_reset();
+    lastWatchdogFeed = millis();
+  }
+  
+  // Verificar que el loop no esté tomando demasiado tiempo
+  if (lastLoopTime > 0 && (millis() - lastLoopTime) > MAX_LOOP_TIME) {
+    Serial.println("WARNING: Loop tardó más de 10 segundos");
+    errorCount++;
+  } else {
+    errorCount = 0; // Resetear contador si el loop es normal
+  }
+  
+  // Si hay demasiados errores consecutivos, reiniciar
+  if (errorCount > MAX_ERRORS_BEFORE_RESTART) {
+    Serial.println("ERROR: Demasiados errores consecutivos. Reiniciando...");
+    delay(2000);
+    ESP.restart();
+  }
+  
+  lastLoopTime = millis();
+  
+  // Manejar cliente del servidor web (no bloqueante)
   server.handleClient();
+  
+  // Reconectar WiFi si es necesario (no bloqueante)
   wifiManager.reconnect();
   
   // Si el acceso fue concedido recientemente, ignorar otras entradas
@@ -205,10 +276,21 @@ void loop() {
   
   // Después del período de acceso concedido, esperar a que el dedo se retire
   if (accessGranted) {
-    // Esperar a que el dedo se retire del sensor antes de continuar
-    while (finger.getImage() != FINGERPRINT_NOFINGER) {
+    // Esperar a que el dedo se retire del sensor antes de continuar (con timeout)
+    unsigned long waitStart = millis();
+    const unsigned long MAX_FINGER_WAIT = 10000; // Máximo 10 segundos
+    
+    while (finger.getImage() != FINGERPRINT_NOFINGER && (millis() - waitStart < MAX_FINGER_WAIT)) {
+      esp_task_wdt_reset(); // Alimentar watchdog durante la espera
       delay(100);
+      server.handleClient(); // Mantener el servidor web respondiendo
     }
+    
+    // Si el timeout se alcanzó, forzar salida
+    if (millis() - waitStart >= MAX_FINGER_WAIT) {
+      Serial.println("WARNING: Timeout esperando que el dedo se retire");
+    }
+    
     accessGranted = false;
     // Pequeño delay adicional para estabilizar
     delay(500);
@@ -233,6 +315,9 @@ void loop() {
       activarAlarma();
     }
   }
+  
+  // Alimentar watchdog al final del loop
+  esp_task_wdt_reset();
 }
 
 // Modo de configuración inicial
@@ -1416,17 +1501,30 @@ void verifyPassword() {
 }
 
 void verifyFingerprint() {
-  if (!apiClient) return; // No hacer nada si no hay API configurada
+  if (!apiClient) {
+    // No hacer nada si no hay API configurada, pero loguear el error
+    static unsigned long lastApiErrorLog = 0;
+    if (millis() - lastApiErrorLog > 60000) { // Log cada minuto para evitar spam
+      Serial.println("WARNING: API Client no configurado");
+      lastApiErrorLog = millis();
+    }
+    return;
+  }
   
   uint8_t p = finger.getImage();
   if (p == FINGERPRINT_NOFINGER) {
     return;
   } else if (p != FINGERPRINT_OK) {
+    // Loguear errores del sensor pero no bloquear
+    Serial.print("ERROR en sensor de huella (getImage): ");
+    Serial.println(p);
     return;
   }
 
   p = finger.image2Tz();
   if (p != FINGERPRINT_OK) {
+    Serial.print("ERROR en sensor de huella (image2Tz): ");
+    Serial.println(p);
     return;
   }
 
@@ -1499,20 +1597,36 @@ void verifyFingerprint() {
 }
 
 String getUserNameFromID(uint8_t idHuella, int &idUsuario) {
+  idUsuario = 0; // Inicializar por defecto
+  
   if (!apiClient) {
-    idUsuario = 0;
+    Serial.println("ERROR: API Client no disponible en getUserNameFromID");
     return "";
   }
   
   String endpoint = "/api/esp32/usuario/" + String(idHuella);
   String response = apiClient->get(endpoint.c_str());
   
+  // Verificar si se recibió respuesta
+  if (response.length() == 0) {
+    Serial.println("ERROR: No se recibió respuesta del servidor en getUserNameFromID");
+    return "";
+  }
+  
   DynamicJsonDocument doc(256);
   DeserializationError error = deserializeJson(doc, response);
   
   if (error) {
-    Serial.println("Error al parsear JSON");
-    idUsuario = 0;
+    Serial.print("ERROR al parsear JSON en getUserNameFromID: ");
+    Serial.println(error.c_str());
+    Serial.print("Respuesta recibida: ");
+    Serial.println(response);
+    return "";
+  }
+  
+  // Validar que los campos existen antes de acceder
+  if (!doc.containsKey("nombre") || !doc.containsKey("idUsuario")) {
+    Serial.println("ERROR: Respuesta JSON no contiene campos esperados");
     return "";
   }
   
@@ -1529,7 +1643,11 @@ uint8_t getFingerprintEnroll(uint8_t id) {
   lcd.setCursor(0, 0);
   lcd.print("Coloca tu huella");
 
-  while (p != FINGERPRINT_OK) {
+  unsigned long enrollStartTime = millis();
+  const unsigned long MAX_ENROLL_TIME = 30000; // 30 segundos máximo para capturar huella
+  
+  while (p != FINGERPRINT_OK && (millis() - enrollStartTime < MAX_ENROLL_TIME)) {
+    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
     p = finger.getImage();
     switch (p) {
       case FINGERPRINT_OK:
@@ -1541,10 +1659,17 @@ uint8_t getFingerprintEnroll(uint8_t id) {
         Serial.print(".");
         break;
       default:
-        Serial.println("Error");
+        Serial.print("ERROR en sensor: ");
+        Serial.println(p);
+        delay(100);
         break;
     }
     delay(100);
+  }
+  
+  if (millis() - enrollStartTime >= MAX_ENROLL_TIME) {
+    Serial.println("ERROR: Timeout esperando imagen de huella");
+    return 0xFF; // Retornar código de error (0xFF es inválido para Adafruit_Fingerprint)
   }
 
   p = finger.image2Tz(1);
@@ -1557,8 +1682,16 @@ uint8_t getFingerprintEnroll(uint8_t id) {
   lcd.setCursor(0, 0);
   lcd.print("Retira tu dedo");
   delay(2000);
-  while (finger.getImage() != FINGERPRINT_NOFINGER) {
+  unsigned long waitStart = millis();
+  const unsigned long MAX_WAIT_TIME = 10000; // 10 segundos máximo
+  
+  while (finger.getImage() != FINGERPRINT_NOFINGER && (millis() - waitStart < MAX_WAIT_TIME)) {
+    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
     delay(100);
+  }
+  
+  if (millis() - waitStart >= MAX_WAIT_TIME) {
+    Serial.println("WARNING: Timeout esperando que se retire el dedo");
   }
 
   Serial.println("Coloca el mismo dedo nuevamente...");
@@ -1569,7 +1702,10 @@ uint8_t getFingerprintEnroll(uint8_t id) {
   lcd.print("dedo nuevamente");
 
   p = -1;
-  while (p != FINGERPRINT_OK) {
+  unsigned long enrollStartTime2 = millis(); // Nueva variable para el segundo enroll
+  
+  while (p != FINGERPRINT_OK && (millis() - enrollStartTime2 < MAX_ENROLL_TIME)) {
+    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
     p = finger.getImage();
     switch (p) {
       case FINGERPRINT_OK:
@@ -1579,9 +1715,17 @@ uint8_t getFingerprintEnroll(uint8_t id) {
         Serial.print(".");
         break;
       default:
+        Serial.print("ERROR en sensor (2da imagen): ");
+        Serial.println(p);
+        delay(100);
         break;
     }
     delay(100);
+  }
+  
+  if (millis() - enrollStartTime2 >= MAX_ENROLL_TIME) {
+    Serial.println("ERROR: Timeout esperando segunda imagen de huella");
+    return 0xFF; // Retornar código de error (0xFF es inválido para Adafruit_Fingerprint)
   }
 
   p = finger.image2Tz(2);
@@ -1614,8 +1758,12 @@ int generarIDUnico() {
 }
 
 void logUserAccess(int idUsuario, String tipoAcceso) {
-  if (!apiClient) return;
+  if (!apiClient) {
+    Serial.println("WARNING: No se pudo registrar acceso - API Client no disponible");
+    return;
+  }
   
+  // Intentar registrar acceso, pero no bloquear si falla
   DynamicJsonDocument doc(256);
   doc["idUsuario"] = idUsuario;
   doc["tipo_acceso"] = tipoAcceso;
@@ -1623,19 +1771,35 @@ void logUserAccess(int idUsuario, String tipoAcceso) {
   String jsonData;
   serializeJson(doc, jsonData);
   
-  apiClient->post("/api/esp32/acceso", jsonData.c_str());
+  String response = apiClient->post("/api/esp32/acceso", jsonData.c_str());
+  
+  if (response.length() == 0) {
+    Serial.println("WARNING: No se pudo registrar acceso en el servidor");
+  } else {
+    Serial.println("Acceso registrado exitosamente");
+  }
 }
 
 void registrarAlarmaEnBD(String descripcion) {
-  if (!apiClient) return;
+  if (!apiClient) {
+    Serial.println("WARNING: No se pudo registrar alarma - API Client no disponible");
+    return;
+  }
   
+  // Intentar registrar alarma, pero no bloquear si falla
   DynamicJsonDocument doc(256);
   doc["descripcion"] = descripcion;
   
   String jsonData;
   serializeJson(doc, jsonData);
   
-  apiClient->post("/api/esp32/alarma", jsonData.c_str());
+  String response = apiClient->post("/api/esp32/alarma", jsonData.c_str());
+  
+  if (response.length() == 0) {
+    Serial.println("WARNING: No se pudo registrar alarma en el servidor");
+  } else {
+    Serial.println("Alarma registrada exitosamente");
+  }
 }
 
 String getAdminPhoneNumber() {
@@ -1699,19 +1863,39 @@ String urlencode(const String &str) {
 void sendWhatsAppAlert() {
   String adminPhone = getAdminPhoneNumber();
   if (adminPhone.length() == 0) {
-    Serial.println("No se pudo obtener el número de teléfono del administrador");
+    Serial.println("ERROR: No se pudo obtener el número de teléfono del administrador");
+    return;
+  }
+  
+  if (callMeBotAPIKey.length() == 0) {
+    Serial.println("ERROR: API Key de CallMeBot no configurada");
     return;
   }
 
-  WiFiClient client;
+  String message = "ALERTA: Activación de la alarma";
+  
+  // Usar WiFiClientSecure para HTTPS
+  WiFiClientSecure client;
+  client.setInsecure(); // Desactivar verificación de certificado (para desarrollo)
+  client.setTimeout(5000); // Timeout de 5 segundos
+  
   const char* host = "api.callmebot.com";
-  const int port = 80;
+  const int port = 443; // HTTPS
   String path = String("/whatsapp.php?phone=") + urlencode(adminPhone) +
-                 "&text=" + urlencode("ALERTA: Activación de la alarma") +
+                 "&text=" + urlencode(message) +
                  "&apikey=" + urlencode(callMeBotAPIKey);
 
+  unsigned long connectStart = millis();
   if (!client.connect(host, port)) {
-    Serial.println("Error de conexión a CallMeBot");
+    Serial.println("ERROR: No se pudo conectar a CallMeBot (WhatsApp)");
+    client.stop();
+    return;
+  }
+
+  // Verificar timeout de conexión
+  if (millis() - connectStart > 5000) {
+    Serial.println("ERROR: Timeout conectando a CallMeBot (WhatsApp)");
+    client.stop();
     return;
   }
 
@@ -1722,7 +1906,10 @@ void sendWhatsAppAlert() {
 
   String response = "";
   unsigned long timeout = millis();
-  while (client.connected() && millis() - timeout < 5000) {
+  const unsigned long RESPONSE_TIMEOUT = 5000;
+  
+  while (client.connected() && millis() - timeout < RESPONSE_TIMEOUT) {
+    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
     while (client.available()) {
       char c = client.read();
       response += c;
@@ -1730,11 +1917,90 @@ void sendWhatsAppAlert() {
   }
 
   client.stop();
+  
+  if (response.length() > 0) {
+    Serial.println("Notificación WhatsApp enviada exitosamente");
+  } else {
+    Serial.println("WARNING: No se recibió respuesta de CallMeBot (WhatsApp)");
+  }
+}
+
+void sendCallAlert() {
+  String adminPhone = getAdminPhoneNumber();
+  if (adminPhone.length() == 0) {
+    Serial.println("ERROR: No se pudo obtener el número de teléfono del administrador");
+    return;
+  }
+  
+  if (callMeBotAPIKey.length() == 0) {
+    Serial.println("ERROR: API Key de CallMeBot no configurada");
+    return;
+  }
+
+  String message = "ALERTA: Activación de la alarma";
+  
+  // Usar WiFiClientSecure para HTTPS
+  WiFiClientSecure client;
+  client.setInsecure(); // Desactivar verificación de certificado (para desarrollo)
+  client.setTimeout(10000); // Timeout de 10 segundos para llamadas
+  
+  const char* host = "api.callmebot.com";
+  const int port = 443; // HTTPS
+  String path = String("/call.php?phone=") + urlencode(adminPhone) +
+                 "&text=" + urlencode(message) +
+                 "&apikey=" + urlencode(callMeBotAPIKey);
+
+  unsigned long connectStart = millis();
+  if (!client.connect(host, port)) {
+    Serial.println("ERROR: No se pudo conectar a CallMeBot (Llamada)");
+    client.stop();
+    return;
+  }
+
+  // Verificar timeout de conexión
+  if (millis() - connectStart > 10000) {
+    Serial.println("ERROR: Timeout conectando a CallMeBot (Llamada)");
+    client.stop();
+    return;
+  }
+
+  client.println("GET " + path + " HTTP/1.1");
+  client.println("Host: " + String(host));
+  client.println("Connection: close");
+  client.println();
+
+  String response = "";
+  unsigned long timeout = millis();
+  const unsigned long RESPONSE_TIMEOUT = 10000; // Más tiempo para llamadas
+  
+  while (client.connected() && millis() - timeout < RESPONSE_TIMEOUT) {
+    esp_task_wdt_reset(); // Alimentar watchdog durante la espera
+    while (client.available()) {
+      char c = client.read();
+      response += c;
+    }
+  }
+
+  client.stop();
+  
+  if (response.length() > 0) {
+    Serial.println("Llamada de alerta iniciada exitosamente");
+  } else {
+    Serial.println("WARNING: No se recibió respuesta de CallMeBot (Llamada)");
+  }
+}
+
+void sendHybridAlert() {
+  // Enviar ambas notificaciones: WhatsApp y Llamada
+  Serial.println("Enviando notificaciones híbridas (WhatsApp + Llamada)...");
+  sendWhatsAppAlert();
+  delay(1000); // Pequeño delay entre notificaciones
+  sendCallAlert();
 }
 
 void activarAlarma() {
   digitalWrite(relayFailPin, HIGH);
-  sendWhatsAppAlert();
+  sendHybridAlert(); // Enviar WhatsApp y llamada
   registrarAlarmaEnBD("Alarma activada");
   delay(5000);
   digitalWrite(relayFailPin, LOW);

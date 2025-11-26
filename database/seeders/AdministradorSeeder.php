@@ -48,6 +48,41 @@ class AdministradorSeeder extends Seeder
             $this->command->info('Correo: yodamoju41@gmail.com');
             $this->command->info('ID: 1064307964');
         }
+
+        // Segundo administrador: migueldeaguas17@gmail.com
+        $administrador2 = Administrador::where('correo', 'migueldeaguas17@gmail.com')
+            ->orWhere('id', 1063278405)
+            ->first();
+        
+        if ($administrador2) {
+            // Actualizar el administrador existente
+            $administrador2->update([
+                'correo' => 'migueldeaguas17@gmail.com',
+                'password' => 'N22y1900#', // Laravel lo hasheará automáticamente por el cast
+                'telefono_admin' => '573207652171',
+                'codigo' => 1754334,
+            ]);
+            
+            $this->command->info('Segundo administrador actualizado exitosamente!');
+            $this->command->info('Correo: migueldeaguas17@gmail.com');
+            $this->command->info('ID: ' . $administrador2->id);
+        } else {
+            // Crear el administrador nuevo
+            // Usar DB::table para poder establecer el ID manualmente
+            DB::table('administradores')->insert([
+                'id' => 1063278405,
+                'correo' => 'migueldeaguas17@gmail.com',
+                'password' => Hash::make('N22y1900#'),
+                'telefono_admin' => '573207652171',
+                'codigo' => 1754334,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            
+            $this->command->info('Segundo administrador creado exitosamente!');
+            $this->command->info('Correo: migueldeaguas17@gmail.com');
+            $this->command->info('ID: 1063278405');
+        }
     }
 }
 
