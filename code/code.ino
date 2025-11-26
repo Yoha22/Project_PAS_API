@@ -67,6 +67,8 @@ void handleReconfig();
 void handleResetWiFi();
 void handleEnrollFingerprint();
 void handleDeleteFingerprint();
+void addCORSHeaders(WebServer& server);
+void handleOptions(WebServer& server);
 
 void setup() {
   Serial.begin(115200);
@@ -146,6 +148,14 @@ void setup() {
   }
   
   // Configurar servidor web local
+  // Handlers OPTIONS para CORS (preflight)
+  server.on("/registrarHuella", HTTP_OPTIONS, []() { handleOptions(server); });
+  server.on("/eliminarHuella", HTTP_OPTIONS, []() { handleOptions(server); });
+  server.on("/config", HTTP_OPTIONS, []() { handleOptions(server); });
+  server.on("/reconfig", HTTP_OPTIONS, []() { handleOptions(server); });
+  server.on("/resetwifi", HTTP_OPTIONS, []() { handleOptions(server); });
+  
+  // Handlers normales
   server.on("/registrarHuella", HTTP_GET, handleEnrollFingerprint);
   server.on("/eliminarHuella", HTTP_POST, handleDeleteFingerprint);
   server.on("/config", HTTP_GET, handleGetConfig);
@@ -371,11 +381,12 @@ void iniciarModoConfiguracion() {
     html += "});";
     html += "</script>";
     html += "</body></html>";
+    addCORSHeaders(configServer);
     configServer.send(200, "text/html; charset=utf-8", html);
   });
   
-  // Endpoint para guardar configuración
-  configServer.on("/config", HTTP_POST, [&configServer]() {
+  // Handler para guardar configuración (se usa en /config y /register)
+  auto handleConfigSave = [&configServer]() {
     String ssid = configServer.arg("ssid");
     String password = configServer.arg("password");
     String serverUrl = configServer.arg("serverUrl");
@@ -418,6 +429,7 @@ void iniciarModoConfiguracion() {
     Serial.println("Credenciales WiFi y configuración guardadas");
     Serial.println("Reiniciando para conectar al WiFi...");
     
+    addCORSHeaders(configServer);
     configServer.send(200, "application/json", "{\"success\": true, \"message\": \"Configuración guardada. Conectando al WiFi y registrando dispositivo...\"}");
     delay(2000);
     
@@ -458,7 +470,11 @@ void iniciarModoConfiguracion() {
       Serial.println("Reiniciando para intentar nuevamente...");
       ESP.restart();
     }
-  });
+  };
+  
+  // Registrar el handler en ambos endpoints
+  configServer.on("/config", HTTP_POST, handleConfigSave);
+  configServer.on("/register", HTTP_POST, handleConfigSave);
   
   configServer.begin();
   
@@ -847,8 +863,23 @@ String getConfigPortalHTML() {
 )";
 }
 
+// Función helper para agregar headers CORS
+void addCORSHeaders(WebServer& server) {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  server.sendHeader("Access-Control-Max-Age", "3600");
+}
+
+// Handler para preflight OPTIONS requests
+void handleOptions(WebServer& server) {
+  addCORSHeaders(server);
+  server.send(204); // No Content
+}
+
 // Handlers del servidor web local
 void handleGetConfig() {
+  addCORSHeaders(server);
   if (!deviceConfig.configured) {
     server.send(200, "application/json", "{\"configured\": false}");
     return;
@@ -867,6 +898,7 @@ void handleGetConfig() {
 
 void handleReconfig() {
   configManager.clearConfig();
+  addCORSHeaders(server);
   server.send(200, "application/json", "{\"message\": \"Configuración borrada. Reiniciando...\"}");
   delay(2000);
   ESP.restart();
@@ -880,12 +912,14 @@ void handleResetWiFi() {
   preferences.remove("password");
   preferences.end();
   
+  addCORSHeaders(server);
   server.send(200, "application/json", "{\"message\": \"Credenciales WiFi borradas. Reiniciando para configurar nuevo WiFi...\"}");
   delay(2000);
   ESP.restart();
 }
 
 void handleEnrollFingerprint() {
+  addCORSHeaders(server);
   if (!apiClient) {
     server.send(500, "application/json", "{\"success\": false, \"error\": \"Dispositivo no configurado\"}");
     return;
@@ -918,11 +952,14 @@ void handleEnrollFingerprint() {
     deserializeJson(responseDoc, response);
     
     if (responseDoc["success"]) {
+      addCORSHeaders(server);
       server.send(200, "application/json", "{\"success\": true, \"idHuella\": " + String(id) + "}");
     } else {
+      addCORSHeaders(server);
       server.send(500, "application/json", "{\"success\": false, \"error\": \"Error al enviar huella al servidor\"}");
     }
   } else {
+    addCORSHeaders(server);
     server.send(500, "application/json", "{\"success\": false, \"error\": \"Error al registrar la huella\"}");
   }
   
@@ -937,6 +974,7 @@ void handleEnrollFingerprint() {
 }
 
 void handleDeleteFingerprint() {
+  addCORSHeaders(server);
   if (server.hasArg("id")) {
     int id = server.arg("id").toInt();
     if (deleteFingerprint(id)) {

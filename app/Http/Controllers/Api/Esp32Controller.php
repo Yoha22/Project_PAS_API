@@ -483,6 +483,97 @@ class Esp32Controller extends Controller
     }
 
     /**
+     * Proxy para registrar huella en el ESP32
+     * GET /api/esp32-proxy/registrar-huella
+     */
+    public function proxyRegistrarHuella(Request $request)
+    {
+        Log::info('[ESP32-PROXY] proxyRegistrarHuella iniciado', [
+            'ip' => $request->input('ip'),
+        ]);
+
+        $validated = $request->validate([
+            'ip' => 'required|string|ip',
+        ]);
+
+        $esp32Ip = $validated['ip'];
+        $url = "http://{$esp32Ip}/registrarHuella";
+        $timeout = 35; // segundos (tiempo suficiente para capturar huella)
+
+        try {
+            Log::info('[ESP32-PROXY] Intentando conectar al ESP32 para registrar huella', ['url' => $url]);
+
+            $response = Http::timeout($timeout)
+                ->connectTimeout(10)
+                ->withOptions(['verify' => false])
+                ->withHeaders([
+                    'Accept' => 'text/plain, application/json, */*',
+                ])
+                ->get($url);
+
+            $statusCode = $response->status();
+            $responseBody = $response->body();
+
+            Log::info('[ESP32-PROXY] Respuesta del ESP32 (registrar huella)', [
+                'status_code' => $statusCode,
+                'response_length' => strlen($responseBody),
+            ]);
+
+            if ($response->successful()) {
+                // Intentar parsear como JSON primero
+                $jsonResponse = json_decode($responseBody, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    return response()->json($jsonResponse, $statusCode);
+                }
+
+                // Si no es JSON, devolver el texto (es el ID de la huella)
+                return response()->json([
+                    'success' => true,
+                    'idHuella' => trim($responseBody),
+                    'raw' => trim($responseBody),
+                ], $statusCode);
+            } else {
+                throw new \Exception("HTTP {$statusCode}: {$responseBody}");
+            }
+
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('[ESP32-PROXY] Error de conexión al registrar huella', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo conectar con el ESP32. Verifica que esté encendido y accesible en ' . $esp32Ip,
+                'details' => $e->getMessage(),
+            ], 503);
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            Log::error('[ESP32-PROXY] Error de petición HTTP al registrar huella', [
+                'url' => $url,
+                'status_code' => $e->response ? $e->response->status() : 'N/A',
+                'response_body' => $e->response ? $e->response->body() : 'N/A',
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'error' => 'Error en la respuesta del ESP32: ' . ($e->response ? $e->response->status() : 'Desconocido'),
+                'details' => $e->getMessage(),
+            ], 500);
+        } catch (\Throwable $e) {
+            Log::error('[ESP32-PROXY] Error inesperado al registrar huella', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'error' => 'Ocurrió un error inesperado al intentar registrar la huella.',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Enviar configuración al ESP32
      * POST /api/esp32/config
      */

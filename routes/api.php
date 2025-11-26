@@ -206,6 +206,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('esp32/config-html', [Esp32Controller::class, 'getConfigHtml']);
     Route::post('esp32/config', [Esp32Controller::class, 'postConfig']);
     Route::post('esp32/activate-config-mode', [Esp32Controller::class, 'activateConfigMode']);
+    
+    // Proxy para operaciones con huellas
+    Route::get('esp32-proxy/registrar-huella', [Esp32Controller::class, 'proxyRegistrarHuella']);
 });
 
 // Rutas ESP32 (públicas para registro, protegidas con token de dispositivo para el resto)
