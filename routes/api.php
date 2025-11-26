@@ -208,8 +208,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('esp32/config', [Esp32Controller::class, 'postConfig']);
     Route::post('esp32/activate-config-mode', [Esp32Controller::class, 'activateConfigMode']);
     
-    // Proxy para operaciones con huellas
-    Route::get('esp32-proxy/tunnel-status', [Esp32Controller::class, 'getTunnelStatus']);
+    // Proxy para operaciones con huellas (requiere autenticación)
     Route::get('esp32-proxy/registrar-huella', [Esp32Controller::class, 'proxyRegistrarHuella']);
     
     // Gateway para comunicación con ESP32 (comandos, estado, control)
@@ -223,6 +222,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/control', [Esp32GatewayController::class, 'controlDevice']);
     });
 });
+
+// Endpoint público para verificar estado del túnel (sin autenticación)
+Route::get('esp32-proxy/tunnel-status', [\App\Http\Controllers\Api\Esp32Controller::class, 'getTunnelStatus']);
 
 // Rutas ESP32 (públicas para registro, protegidas con token de dispositivo para el resto)
 Route::prefix('esp32')->group(function () {
