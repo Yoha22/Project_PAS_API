@@ -16,8 +16,7 @@ return [
     */
 
     'paths' => [
-        'api/*',
-        'auth/*',
+        'api/*',        
         'debug/*',
     ],
 

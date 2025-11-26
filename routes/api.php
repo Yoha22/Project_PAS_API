@@ -6,6 +6,36 @@ use App\Http\Middleware\AuthenticateEsp32;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
+// Ruta OPTIONS global para todas las rutas API - debe estar PRIMERO
+// Esto asegura que las peticiones preflight OPTIONS se manejen antes que cualquier otra ruta
+Route::options('/{any}', function (Request $request) {
+    $origin = $request->header('Origin');
+    $allowedOrigins = config('cors.allowed_origins', []);
+    
+    // Verificar si el origen está permitido
+    $isOriginAllowed = false;
+    if ($origin) {
+        foreach ($allowedOrigins as $allowedOrigin) {
+            if ($origin === $allowedOrigin || 
+                parse_url($origin, PHP_URL_HOST) === parse_url($allowedOrigin, PHP_URL_HOST)) {
+                $isOriginAllowed = true;
+                break;
+            }
+        }
+    }
+    
+    // Usar el origen permitido o el primero de la lista
+    $originToUse = $isOriginAllowed ? $origin : ($allowedOrigins[0] ?? '*');
+    
+    return response('', 204)
+        ->header('Access-Control-Allow-Origin', $originToUse)
+        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
+        ->header('Access-Control-Allow-Headers', '*')
+        ->header('Access-Control-Allow-Credentials', 'false')
+        ->header('Access-Control-Max-Age', '0')
+        ->header('Vary', 'Origin');
+})->where('any', '.*');
+
 // Ruta de prueba simple (pública) - responde rápido para verificar que el servidor está activo
 Route::get('/ping', function (Request $request) {
     return response()->json([
