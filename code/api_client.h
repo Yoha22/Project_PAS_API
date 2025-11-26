@@ -126,22 +126,105 @@ private:
     String response = "";
     unsigned long timeout = millis();
     
-    while (stream->connected() && millis() - timeout < 5000) {
+    while (stream->connected() && millis() - timeout < 10000) { // Aumentar timeout a 10s
       while (stream->available()) {
         char c = stream->read();
         response += c;
       }
     }
     
+    // Verificar si la respuesta está en formato chunked
+    bool isChunked = response.indexOf("Transfer-Encoding: chunked") >= 0 || 
+                     response.indexOf("transfer-encoding: chunked") >= 0;
+    
     // Extraer JSON del cuerpo de la respuesta
     int jsonStart = response.indexOf("\r\n\r\n");
     if (jsonStart >= 0) {
       String body = response.substring(jsonStart + 4);
       body.trim();
+      
+      // Si es chunked, decodificar
+      if (isChunked) {
+        body = decodeChunkedResponse(body);
+      }
+      
+      // Buscar JSON directamente si no se encontró
+      int jsonPos = body.indexOf("{");
+      if (jsonPos >= 0) {
+        int jsonEnd = body.lastIndexOf("}");
+        if (jsonEnd > jsonPos) {
+          return body.substring(jsonPos, jsonEnd + 1);
+        }
+      }
+      
       return body;
     }
     
+    // Si no se encontró \r\n\r\n, buscar JSON directamente
+    int jsonStart2 = response.indexOf("{");
+    if (jsonStart2 >= 0) {
+      int jsonEnd2 = response.lastIndexOf("}");
+      if (jsonEnd2 > jsonStart2) {
+        return response.substring(jsonStart2, jsonEnd2 + 1);
+      }
+    }
+    
     return "";
+  }
+  
+  // Función para decodificar respuesta chunked
+  String decodeChunkedResponse(const String& chunkedData) {
+    String result = "";
+    int pos = 0;
+    
+    while (pos < chunkedData.length()) {
+      // Buscar el tamaño del chunk (en hexadecimal)
+      int lineEnd = chunkedData.indexOf("\r\n", pos);
+      if (lineEnd < 0) break;
+      
+      String chunkSizeStr = chunkedData.substring(pos, lineEnd);
+      chunkSizeStr.trim();
+      
+      // Si el tamaño es "0", es el último chunk
+      if (chunkSizeStr == "0" || chunkSizeStr.length() == 0) {
+        break;
+      }
+      
+      // Convertir tamaño hexadecimal a decimal
+      int chunkSize = 0;
+      for (int i = 0; i < chunkSizeStr.length(); i++) {
+        char c = chunkSizeStr.charAt(i);
+        int digit = 0;
+        if (c >= '0' && c <= '9') {
+          digit = c - '0';
+        } else if (c >= 'a' && c <= 'f') {
+          digit = c - 'a' + 10;
+        } else if (c >= 'A' && c <= 'F') {
+          digit = c - 'A' + 10;
+        }
+        chunkSize = chunkSize * 16 + digit;
+      }
+      
+      // Saltar \r\n después del tamaño
+      pos = lineEnd + 2;
+      
+      // Leer los datos del chunk
+      if (pos + chunkSize <= chunkedData.length()) {
+        result += chunkedData.substring(pos, pos + chunkSize);
+        pos += chunkSize;
+      } else {
+        break;
+      }
+      
+      // Saltar \r\n después de los datos
+      if (pos + 2 <= chunkedData.length() && chunkedData.substring(pos, pos + 2) == "\r\n") {
+        pos += 2;
+      } else {
+        break;
+      }
+    }
+    
+    return result;
   }
   
   String extractHost(const String& url) {

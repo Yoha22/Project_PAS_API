@@ -6,6 +6,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <WiFiClientSecure.h>
 #include "config.h"
 #include "wifi_manager.h"
 #include "api_client.h"
@@ -270,16 +271,18 @@ void iniciarModoConfiguracion() {
   // Página principal con formulario para WiFi Y registro de dispositivo
   configServer.on("/", HTTP_GET, [&configServer, apName]() {
     String html = "<!DOCTYPE html><html><head>";
+    html += "<meta charset='UTF-8'>";
     html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
     html += "<title>Configuración ESP32</title>";
-    html += "<style>body{font-family:Arial;padding:20px;background:#f0f0f0;}";
-    html += ".container{max-width:500px;margin:0 auto;background:white;padding:30px;border-radius:10px;}";
-    html += "h1{color:#333;text-align:center;}";
+    html += "<style>body{font-family:Arial,sans-serif;padding:20px;background:#f0f0f0;}";
+    html += ".container{max-width:500px;margin:0 auto;background:white;padding:30px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}";
+    html += "h1{color:#333;text-align:center;margin-bottom:20px;}";
     html += "label{display:block;margin-top:15px;color:#555;font-weight:bold;}";
-    html += "input,select{width:100%;padding:10px;margin-top:5px;border:1px solid #ddd;border-radius:5px;box-sizing:border-box;}";
-    html += "button{width:100%;padding:12px;margin-top:20px;background:#4CAF50;color:white;border:none;border-radius:5px;font-size:16px;cursor:pointer;}";
-    html += "button:hover{background:#45a049;}</style></head><body>";
-    html += "<div class='container'><h1>🔧 Configuración ESP32</h1>";
+    html += "input,select{width:100%;padding:10px;margin-top:5px;border:1px solid #ddd;border-radius:5px;box-sizing:border-box;font-size:14px;}";
+    html += "button{width:100%;padding:12px;margin-top:20px;background:#4CAF50;color:white;border:none;border-radius:5px;font-size:16px;cursor:pointer;font-weight:bold;}";
+    html += "button:hover{background:#45a049;}";
+    html += "#result{margin-top:20px;padding:10px;border-radius:5px;}</style></head><body>";
+    html += "<div class='container'><h1>⚙️ Configuración ESP32</h1>";
     html += "<form id='configForm'>";
     html += "<label>Red WiFi:</label>";
     html += "<input type='text' name='ssid' placeholder='Nombre de la red WiFi' required>";
@@ -308,12 +311,12 @@ void iniciarModoConfiguracion() {
     html += "const result = await response.json();";
     html += "const resultDiv = document.getElementById('result');";
     html += "if (result.success) {";
-    html += "resultDiv.innerHTML = '<div style=\"color: green; margin-top: 20px;\">' + result.message + '</div>';";
-    html += "setTimeout(() => { resultDiv.innerHTML = '<div style=\"color: blue;\">Reiniciando...</div>'; }, 2000);";
+    html += "resultDiv.innerHTML = '<div style=\"color: green; margin-top: 20px; padding: 10px; background: #e8f5e9; border-radius: 5px;\">' + result.message + '</div>';";
+    html += "setTimeout(() => { resultDiv.innerHTML = '<div style=\"color: blue; margin-top: 20px; padding: 10px; background: #e3f2fd; border-radius: 5px;\">Reiniciando dispositivo...</div>'; }, 2000);";
     html += "} else {";
-    html += "resultDiv.innerHTML = '<div style=\"color: red; margin-top: 20px;\">Error: ' + (result.error || 'Desconocido') + '</div>';";
+    html += "resultDiv.innerHTML = '<div style=\"color: red; margin-top: 20px; padding: 10px; background: #ffebee; border-radius: 5px;\">Error: ' + (result.error || 'Desconocido') + '</div>';";
     html += "}});</script></body></html>";
-    configServer.send(200, "text/html", html);
+    configServer.send(200, "text/html; charset=utf-8", html);
   });
   
   // Endpoint para guardar configuración
@@ -416,17 +419,26 @@ void iniciarModoConfiguracion() {
 
 // Registrar dispositivo en el servidor
 bool registrarDispositivo(String serverUrl, String codigo, String nombre, bool useHTTPS) {
-  WiFiClient client;
-  
   // Determinar host y puerto
   String host = extractHost(serverUrl);
-  int port = useHTTPS ? 443 : 80;
-  if (serverUrl.indexOf(":") > 0) {
-    // Extraer puerto de URL si está presente
-    int portStart = serverUrl.lastIndexOf(":");
-    if (portStart > 0) {
-      String portStr = serverUrl.substring(portStart + 1);
-      port = portStr.toInt();
+  int port = useHTTPS ? 443 : 80; // Puerto por defecto según protocolo
+  
+  // Buscar puerto explícito en la URL (solo si hay :puerto después del host)
+  // Buscar después del :// para evitar confundir con el : del protocolo
+  int protocolPos = serverUrl.indexOf("://");
+  if (protocolPos >= 0) {
+    int afterProtocol = protocolPos + 3; // Después de "://"
+    int colonPos = serverUrl.indexOf(":", afterProtocol); // Buscar : después del protocolo
+    int slashPos = serverUrl.indexOf("/", afterProtocol); // Buscar / después del protocolo
+    
+    // Si hay un : después del protocolo y antes de la ruta, es el puerto
+    if (colonPos > 0 && (slashPos < 0 || colonPos < slashPos)) {
+      int portEnd = (slashPos > 0) ? slashPos : serverUrl.length();
+      String portStr = serverUrl.substring(colonPos + 1, portEnd);
+      int extractedPort = portStr.toInt();
+      if (extractedPort > 0 && extractedPort < 65536) {
+        port = extractedPort;
+      }
     }
   }
   
@@ -440,61 +452,253 @@ bool registrarDispositivo(String serverUrl, String codigo, String nombre, bool u
   String jsonData;
   serializeJson(doc, jsonData);
   
-  if (!client.connect(host.c_str(), port)) {
-    Serial.println("Error de conexión al servidor");
-    return false;
+  Serial.print("Conectando a: ");
+  Serial.print(host);
+  Serial.print(":");
+  Serial.println(port);
+  Serial.print("HTTPS: ");
+  Serial.println(useHTTPS ? "Sí" : "No");
+  
+  if (useHTTPS) {
+    // Usar WiFiClientSecure para HTTPS
+    WiFiClientSecure client;
+    
+    // Para Render.com y otros servicios, necesitamos desactivar la verificación del certificado
+    // (solo para desarrollo, en producción deberías usar certificados válidos)
+    client.setInsecure(); // Desactiva verificación de certificado
+    
+    if (!client.connect(host.c_str(), port)) {
+      Serial.println("Error de conexión HTTPS al servidor");
+      return false;
+    }
+    
+    Serial.println("Conectado vía HTTPS");
+    
+    client.print("POST ");
+    client.print(path);
+    client.println(" HTTP/1.1");
+    client.print("Host: ");
+    client.println(host);
+    client.println("Content-Type: application/json");
+    client.print("Content-Length: ");
+    client.println(jsonData.length());
+    client.println();
+    client.print(jsonData);
+    
+    String response = "";
+    unsigned long timeout = millis();
+    while (client.connected() && millis() - timeout < 10000) {
+      while (client.available()) {
+        char c = client.read();
+        response += c;
+      }
+    }
+    
+    client.stop();
+    
+    Serial.print("Respuesta del servidor: ");
+    Serial.println(response);
+    
+    // Parsear respuesta - manejar Transfer-Encoding: chunked
+    String jsonResponse = extractJSONFromResponse(response);
+    
+    if (jsonResponse.length() == 0) {
+      Serial.println("Error: No se pudo extraer JSON de la respuesta");
+      return false;
+    }
+    
+    Serial.print("JSON extraído: ");
+    Serial.println(jsonResponse);
+    
+    DynamicJsonDocument responseDoc(1024);
+    DeserializationError error = deserializeJson(responseDoc, jsonResponse);
+    
+    if (error || !responseDoc["success"]) {
+      Serial.print("Error parseando respuesta: ");
+      Serial.println(error.c_str());
+      if (responseDoc.containsKey("error")) {
+        Serial.print("Error del servidor: ");
+        Serial.println(responseDoc["error"].as<String>());
+      }
+      return false;
+    }
+    
+    // Guardar configuración
+    strncpy(deviceConfig.serverUrl, serverUrl.c_str(), sizeof(deviceConfig.serverUrl) - 1);
+    deviceConfig.serverUrl[sizeof(deviceConfig.serverUrl) - 1] = '\0';
+    deviceConfig.serverPort = port;
+    strncpy(deviceConfig.deviceToken, responseDoc["data"]["token"].as<const char*>(), sizeof(deviceConfig.deviceToken) - 1);
+    deviceConfig.deviceToken[sizeof(deviceConfig.deviceToken) - 1] = '\0';
+    deviceConfig.deviceId = responseDoc["data"]["id"];
+    deviceConfig.useHTTPS = useHTTPS;
+    deviceConfig.configured = true;
+    
+    configManager.saveConfig(deviceConfig);
+    
+    Serial.println("Dispositivo registrado exitosamente!");
+    return true;
+    
+  } else {
+    // Usar WiFiClient normal para HTTP
+    WiFiClient client;
+    
+    if (!client.connect(host.c_str(), port)) {
+      Serial.println("Error de conexión HTTP al servidor");
+      return false;
+    }
+    
+    Serial.println("Conectado vía HTTP");
+    
+    client.print("POST ");
+    client.print(path);
+    client.println(" HTTP/1.1");
+    client.print("Host: ");
+    client.println(host);
+    client.println("Content-Type: application/json");
+    client.print("Content-Length: ");
+    client.println(jsonData.length());
+    client.println();
+    client.print(jsonData);
+    
+    String response = "";
+    unsigned long timeout = millis();
+    while (client.connected() && millis() - timeout < 10000) {
+      while (client.available()) {
+        char c = client.read();
+        response += c;
+      }
+    }
+    
+    client.stop();
+    
+    Serial.print("Respuesta del servidor: ");
+    Serial.println(response);
+    
+    // Parsear respuesta - manejar Transfer-Encoding: chunked
+    String jsonResponse = extractJSONFromResponse(response);
+    
+    if (jsonResponse.length() == 0) {
+      Serial.println("Error: No se pudo extraer JSON de la respuesta");
+      return false;
+    }
+    
+    Serial.print("JSON extraído: ");
+    Serial.println(jsonResponse);
+    
+    DynamicJsonDocument responseDoc(1024);
+    DeserializationError error = deserializeJson(responseDoc, jsonResponse);
+    
+    if (error || !responseDoc["success"]) {
+      Serial.print("Error parseando respuesta: ");
+      Serial.println(error.c_str());
+      if (responseDoc.containsKey("error")) {
+        Serial.print("Error del servidor: ");
+        Serial.println(responseDoc["error"].as<String>());
+      }
+      return false;
+    }
+    
+    // Guardar configuración
+    strncpy(deviceConfig.serverUrl, serverUrl.c_str(), sizeof(deviceConfig.serverUrl) - 1);
+    deviceConfig.serverUrl[sizeof(deviceConfig.serverUrl) - 1] = '\0';
+    deviceConfig.serverPort = port;
+    strncpy(deviceConfig.deviceToken, responseDoc["data"]["token"].as<const char*>(), sizeof(deviceConfig.deviceToken) - 1);
+    deviceConfig.deviceToken[sizeof(deviceConfig.deviceToken) - 1] = '\0';
+    deviceConfig.deviceId = responseDoc["data"]["id"];
+    deviceConfig.useHTTPS = useHTTPS;
+    deviceConfig.configured = true;
+    
+    configManager.saveConfig(deviceConfig);
+    
+    Serial.println("Dispositivo registrado exitosamente!");
+    return true;
+  }
+}
+
+// Función para extraer JSON de respuesta HTTP (maneja chunked encoding)
+String extractJSONFromResponse(const String& response) {
+  // Buscar el inicio del JSON directamente
+  int jsonStart = response.indexOf("{\"");
+  if (jsonStart < 0) {
+    // Intentar buscar después de los headers
+    jsonStart = response.indexOf("\r\n\r\n");
+    if (jsonStart < 0) {
+      return "";
+    }
+    String body = response.substring(jsonStart + 4);
+    // Decodificar si es chunked
+    return decodeChunkedResponse(body);
   }
   
-  client.print("POST ");
-  client.print(path);
-  client.println(" HTTP/1.1");
-  client.print("Host: ");
-  client.println(host);
-  client.println("Content-Type: application/json");
-  client.print("Content-Length: ");
-  client.println(jsonData.length());
-  client.println();
-  client.print(jsonData);
+  // Extraer JSON desde el inicio encontrado
+  int jsonEnd = response.lastIndexOf("}");
+  if (jsonEnd > jsonStart) {
+    return response.substring(jsonStart, jsonEnd + 1);
+  }
   
-  String response = "";
-  unsigned long timeout = millis();
-  while (client.connected() && millis() - timeout < 5000) {
-    while (client.available()) {
-      char c = client.read();
-      response += c;
+  // Si no se encuentra el final, extraer hasta el final y limpiar
+  String json = response.substring(jsonStart);
+  jsonEnd = json.lastIndexOf("}");
+  if (jsonEnd > 0) {
+    return json.substring(0, jsonEnd + 1);
+  }
+  
+  return "";
+}
+
+// Función para decodificar respuesta chunked
+String decodeChunkedResponse(const String& chunkedData) {
+  String result = "";
+  int pos = 0;
+  
+  while (pos < chunkedData.length()) {
+    // Buscar el tamaño del chunk (en hexadecimal)
+    int lineEnd = chunkedData.indexOf("\r\n", pos);
+    if (lineEnd < 0) break;
+    
+    String chunkSizeStr = chunkedData.substring(pos, lineEnd);
+    chunkSizeStr.trim();
+    
+    // Si el tamaño es "0", es el último chunk
+    if (chunkSizeStr == "0" || chunkSizeStr.length() == 0) {
+      break;
+    }
+    
+    // Convertir tamaño hexadecimal a decimal
+    int chunkSize = 0;
+    for (int i = 0; i < chunkSizeStr.length(); i++) {
+      char c = chunkSizeStr.charAt(i);
+      int digit = 0;
+      if (c >= '0' && c <= '9') {
+        digit = c - '0';
+      } else if (c >= 'a' && c <= 'f') {
+        digit = c - 'a' + 10;
+      } else if (c >= 'A' && c <= 'F') {
+        digit = c - 'A' + 10;
+      }
+      chunkSize = chunkSize * 16 + digit;
+    }
+    
+    // Saltar \r\n después del tamaño
+    pos = lineEnd + 2;
+    
+    // Leer los datos del chunk
+    if (pos + chunkSize <= chunkedData.length()) {
+      result += chunkedData.substring(pos, pos + chunkSize);
+      pos += chunkSize;
+    } else {
+      break;
+    }
+    
+    // Saltar \r\n después de los datos
+    if (pos + 2 <= chunkedData.length() && chunkedData.substring(pos, pos + 2) == "\r\n") {
+      pos += 2;
+    } else {
+      break;
     }
   }
   
-  client.stop();
-  
-  // Parsear respuesta
-  int jsonStart = response.indexOf("\r\n\r\n");
-  if (jsonStart < 0) {
-    Serial.println("Error al extraer JSON");
-    return false;
-  }
-  
-  String jsonResponse = response.substring(jsonStart + 4);
-  DynamicJsonDocument responseDoc(1024);
-  DeserializationError error = deserializeJson(responseDoc, jsonResponse);
-  
-  if (error || !responseDoc["success"]) {
-    Serial.println("Error al registrar dispositivo");
-    return false;
-  }
-  
-  // Guardar configuración
-  strncpy(deviceConfig.serverUrl, serverUrl.c_str(), sizeof(deviceConfig.serverUrl) - 1);
-  deviceConfig.serverPort = port;
-  strncpy(deviceConfig.deviceToken, responseDoc["data"]["token"].as<const char*>(), sizeof(deviceConfig.deviceToken) - 1);
-  deviceConfig.deviceId = responseDoc["data"]["id"];
-  deviceConfig.useHTTPS = useHTTPS;
-  deviceConfig.configured = true;
-  
-  configManager.saveConfig(deviceConfig);
-  
-  Serial.println("Dispositivo registrado exitosamente!");
-  return true;
+  return result;
 }
 
 String extractHost(const String& url) {
@@ -1180,12 +1384,22 @@ String getAPIKeyFromDB() {
   
   String response = apiClient->get("/api/esp32/admin/codigo");
   
+  Serial.print("Respuesta completa API Key: ");
+  Serial.println(response);
+  Serial.print("Longitud: ");
+  Serial.println(response.length());
+  
   DynamicJsonDocument doc(256);
   DeserializationError error = deserializeJson(doc, response);
   
   if (error) {
+    Serial.print("Error parseando JSON: ");
+    Serial.println(error.c_str());
     return "";
   }
+  
+  Serial.print("JSON parseado correctamente. Codigo: ");
+  Serial.println(doc["codigo"].as<String>());
   
   return doc["codigo"].as<String>();
 }
