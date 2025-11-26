@@ -67,6 +67,10 @@ void handleReconfig();
 void handleResetWiFi();
 void handleEnrollFingerprint();
 void handleDeleteFingerprint();
+void handleCommand();
+void handleStatus();
+void handleControl();
+bool processCommand(String command, JsonObject payload);
 void addCORSHeaders(WebServer& server);
 void handleOptions(WebServer& server);
 
@@ -154,6 +158,9 @@ void setup() {
   server.on("/config", HTTP_OPTIONS, []() { handleOptions(server); });
   server.on("/reconfig", HTTP_OPTIONS, []() { handleOptions(server); });
   server.on("/resetwifi", HTTP_OPTIONS, []() { handleOptions(server); });
+  server.on("/command", HTTP_OPTIONS, []() { handleOptions(server); });
+  server.on("/status", HTTP_OPTIONS, []() { handleOptions(server); });
+  server.on("/control", HTTP_OPTIONS, []() { handleOptions(server); });
   
   // Handlers normales
   server.on("/registrarHuella", HTTP_GET, handleEnrollFingerprint);
@@ -161,6 +168,9 @@ void setup() {
   server.on("/config", HTTP_GET, handleGetConfig);
   server.on("/reconfig", HTTP_POST, handleReconfig);
   server.on("/resetwifi", HTTP_GET, handleResetWiFi);
+  server.on("/command", HTTP_POST, handleCommand);
+  server.on("/status", HTTP_GET, handleStatus);
+  server.on("/control", HTTP_POST, handleControl);
   server.begin();
   
   // Configurar pines
@@ -985,6 +995,177 @@ void handleDeleteFingerprint() {
   } else {
     server.send(400, "application/json", "{\"success\": false, \"error\": \"ID de huella no proporcionado\"}");
   }
+}
+
+// Handler para recibir comandos remotos
+void handleCommand() {
+  addCORSHeaders(server);
+  
+  if (server.hasArg("plain")) {
+    String body = server.arg("plain");
+    
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, body);
+    
+    if (error) {
+      server.send(400, "application/json", "{\"success\": false, \"error\": \"JSON inválido\"}");
+      return;
+    }
+    
+    String messageId = doc["message_id"].as<String>();
+    String command = doc["command"].as<String>();
+    JsonObject payload = doc["payload"].as<JsonObject>();
+    
+    Serial.print("Comando recibido: ");
+    Serial.println(command);
+    Serial.print("Message ID: ");
+    Serial.println(messageId);
+    
+    // Procesar el comando
+    bool success = processCommand(command, payload);
+    
+    if (success) {
+      String response = "{\"success\": true, \"message_id\": \"" + messageId + "\"}";
+      server.send(200, "application/json", response);
+    } else {
+      String response = "{\"success\": false, \"message_id\": \"" + messageId + "\", \"error\": \"Error al procesar comando\"}";
+      server.send(500, "application/json", response);
+    }
+  } else {
+    server.send(400, "application/json", "{\"success\": false, \"error\": \"Cuerpo de petición vacío\"}");
+  }
+}
+
+// Handler para obtener estado del dispositivo
+void handleStatus() {
+  addCORSHeaders(server);
+  
+  String json = "{";
+  json += "\"success\": true,";
+  json += "\"device_id\": " + String(deviceConfig.deviceId) + ",";
+  json += "\"configured\": " + String(deviceConfig.configured ? "true" : "false") + ",";
+  json += "\"wifi_connected\": " + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    json += "\"ip_address\": \"" + WiFi.localIP().toString() + "\",";
+    json += "\"ssid\": \"" + WiFi.SSID() + "\",";
+    json += "\"rssi\": " + String(WiFi.RSSI()) + ",";
+  }
+  
+  json += "\"free_heap\": " + String(ESP.getFreeHeap()) + ",";
+  json += "\"uptime\": " + String(millis() / 1000) + ",";
+  json += "\"fingerprint_sensor\": " + String(finger.verifyPassword() ? "true" : "false");
+  json += "}";
+  
+  server.send(200, "application/json", json);
+}
+
+// Handler para control remoto
+void handleControl() {
+  addCORSHeaders(server);
+  
+  if (server.hasArg("plain")) {
+    String body = server.arg("plain");
+    
+    DynamicJsonDocument doc(512);
+    DeserializationError error = deserializeJson(doc, body);
+    
+    if (error) {
+      server.send(400, "application/json", "{\"success\": false, \"error\": \"JSON inválido\"}");
+      return;
+    }
+    
+    String action = doc["action"].as<String>();
+    bool success = false;
+    
+    Serial.print("Acción de control recibida: ");
+    Serial.println(action);
+    
+    if (action == "relay_on") {
+      digitalWrite(relayPin, HIGH);
+      success = true;
+      Serial.println("Relé activado");
+    } else if (action == "relay_off") {
+      digitalWrite(relayPin, LOW);
+      success = true;
+      Serial.println("Relé desactivado");
+    } else if (action == "restart") {
+      server.send(200, "application/json", "{\"success\": true, \"message\": \"Reiniciando...\"}");
+      delay(1000);
+      ESP.restart();
+      return;
+    } else if (action == "reset_wifi") {
+      handleResetWiFi();
+      return;
+    } else {
+      server.send(400, "application/json", "{\"success\": false, \"error\": \"Acción no reconocida\"}");
+      return;
+    }
+    
+    if (success) {
+      server.send(200, "application/json", "{\"success\": true}");
+    } else {
+      server.send(500, "application/json", "{\"success\": false, \"error\": \"Error al ejecutar acción\"}");
+    }
+  } else {
+    server.send(400, "application/json", "{\"success\": false, \"error\": \"Cuerpo de petición vacío\"}");
+  }
+}
+
+// Función para procesar comandos
+bool processCommand(String command, JsonObject payload) {
+  if (command == "config") {
+    // Procesar configuración
+    if (payload.containsKey("ssid") && payload.containsKey("password") && 
+        payload.containsKey("serverUrl") && payload.containsKey("codigo") && 
+        payload.containsKey("nombre")) {
+      String ssid = payload["ssid"].as<String>();
+      String password = payload["password"].as<String>();
+      String serverUrl = payload["serverUrl"].as<String>();
+      bool useHTTPS = payload.containsKey("useHTTPS") && payload["useHTTPS"].as<bool>();
+      String codigo = payload["codigo"].as<String>();
+      String nombre = payload["nombre"].as<String>();
+      
+      return registrarDispositivo(serverUrl, codigo, nombre, useHTTPS);
+    }
+    return false;
+  } else if (command == "fingerprint_add") {
+    // Agregar huella para usuario
+    if (payload.containsKey("user_id")) {
+      int userId = payload["user_id"].as<int>();
+      isRegistering = true;
+      int id = generarIDUnico();
+      int p = getFingerprintEnroll(id);
+      if (p == FINGERPRINT_OK) {
+        // Enviar huella a Laravel API
+        DynamicJsonDocument doc(256);
+        doc["idHuella"] = id;
+        String jsonData;
+        serializeJson(doc, jsonData);
+        apiClient->post("/api/esp32/huella", jsonData.c_str());
+        isRegistering = false;
+        return true;
+      }
+      isRegistering = false;
+    }
+    return false;
+  } else if (command == "fingerprint_delete") {
+    // Eliminar huella
+    if (payload.containsKey("fingerprint_id")) {
+      int fingerprintId = payload["fingerprint_id"].as<int>();
+      return deleteFingerprint(fingerprintId);
+    }
+    return false;
+  } else if (command == "status") {
+    // El estado ya se maneja en handleStatus()
+    return true;
+  } else if (command == "sync") {
+    // Sincronizar datos (usuarios, huellas)
+    // TODO: Implementar sincronización completa
+    return true;
+  }
+  
+  return false;
 }
 
 // Funciones de huella digital (sin cambios, solo adaptar llamadas API)

@@ -38,7 +38,7 @@ class AdministradorSeeder extends Seeder
                 'id' => 1064307964,
                 'correo' => 'yodamoju41@gmail.com',
                 'password' => Hash::make('N22y1900#'),
-                'telefono_admin' => '3174661434',
+                'telefono_admin' => '573174661434',
                 'codigo' => 7116537,
                 'created_at' => now(),
                 'updated_at' => now(),

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Esp32Controller;
+use App\Http\Controllers\Api\Esp32GatewayController;
 use App\Http\Middleware\AuthenticateEsp32;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -209,6 +210,17 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Proxy para operaciones con huellas
     Route::get('esp32-proxy/registrar-huella', [Esp32Controller::class, 'proxyRegistrarHuella']);
+    
+    // Gateway para comunicación con ESP32 (comandos, estado, control)
+    Route::prefix('esp32/{deviceId}')->group(function () {
+        Route::post('/command', [Esp32GatewayController::class, 'sendCommand']);
+        Route::get('/status', [Esp32GatewayController::class, 'getStatus']);
+        Route::get('/commands', [Esp32GatewayController::class, 'getCommands']);
+        Route::post('/config', [Esp32GatewayController::class, 'configureDevice']);
+        Route::post('/fingerprint/add', [Esp32GatewayController::class, 'addFingerprint']);
+        Route::post('/fingerprint/delete', [Esp32GatewayController::class, 'deleteFingerprint']);
+        Route::post('/control', [Esp32GatewayController::class, 'controlDevice']);
+    });
 });
 
 // Rutas ESP32 (públicas para registro, protegidas con token de dispositivo para el resto)
@@ -226,6 +238,12 @@ Route::prefix('esp32')->group(function () {
         Route::post('/alarma', [Esp32Controller::class, 'alarma']);
         Route::get('/admin/telefono', [Esp32Controller::class, 'getAdminTelefono']);
         Route::get('/admin/codigo', [Esp32Controller::class, 'getAdminCodigo']);
+        
+        // Endpoint para polling de comandos pendientes (fallback si WebSocket no está disponible)
+        Route::get('/commands/pending', [Esp32GatewayController::class, 'getPendingCommands']);
+        
+        // Endpoint para confirmar ejecución de comando
+        Route::post('/commands/{messageId}/complete', [Esp32GatewayController::class, 'completeCommand']);
     });
 });
 
