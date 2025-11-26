@@ -23,7 +23,7 @@ class Esp32AccesoRequest extends FormRequest
     {
         return [
             'idUsuario' => 'required|integer|exists:usuarios,id',
-            'tipo_acceso' => 'required|string|in:Apertura,cierre',
+            'tipo_acceso' => 'required|string|in:Apertura,cierre,Apertura con clave',
         ];
     }
 }

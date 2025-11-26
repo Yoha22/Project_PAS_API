@@ -14,6 +14,7 @@ class Usuario extends Model
         'huella_digital',
         'cedula',
         'celular',
+        'clave',
     ];
 
     public function accesos(): HasMany

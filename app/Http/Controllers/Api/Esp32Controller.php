@@ -114,6 +114,34 @@ class Esp32Controller extends Controller
     }
 
     /**
+     * Obtener clave del usuario por ID
+     * GET /api/esp32/usuario/clave/{idUsuario}
+     */
+    public function getUsuarioClave(Request $request, int $idUsuario)
+    {
+        $usuario = Usuario::find($idUsuario);
+
+        if (!$usuario) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Usuario no encontrado',
+            ], 404);
+        }
+
+        if (!$usuario->clave) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Usuario no tiene clave configurada',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'clave' => $usuario->clave,
+        ]);
+    }
+
+    /**
      * Registrar acceso de usuario
      * POST /api/esp32/acceso
      */

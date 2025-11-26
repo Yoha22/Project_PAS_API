@@ -232,7 +232,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"nombre\": \"Juan Pérez\",\n    \"cedula\": \"1234567890\",\n    \"celular\": \"3001234567\",\n    \"huella_digital\": null\n}",
+							"raw": "{\n    \"nombre\": \"Juan Pérez\",\n    \"cedula\": \"1234567890\",\n    \"celular\": \"3001234567\",\n    \"huella_digital\": null,\n    \"clave\": \"123456\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -289,7 +289,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"nombre\": \"Juan Pérez Actualizado\",\n    \"cedula\": \"1234567890\",\n    \"celular\": \"3001234567\"\n}",
+							"raw": "{\n    \"nombre\": \"Juan Pérez Actualizado\",\n    \"cedula\": \"1234567890\",\n    \"celular\": \"3001234567\",\n    \"clave\": \"123456\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -896,7 +896,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"codigo_admin\": 123456,\n    \"nombre\": \"ESP32 Principal\",\n    \"ubicacion\": \"Entrada\"\n}",
+							"raw": "{\n    \"codigo\": \"123456\",\n    \"nombre\": \"ESP32 Principal\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -989,6 +989,31 @@
 					}
 				},
 				{
+					"name": "Obtener Clave de Usuario",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{device_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/esp32/usuario/clave/:idUsuario",
+							"host": ["{{base_url}}"],
+							"path": ["api", "esp32", "usuario", "clave", ":idUsuario"],
+							"variable": [
+								{
+									"key": "idUsuario",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Obtiene la clave del usuario por ID (requiere token de dispositivo)"
+					}
+				},
+				{
 					"name": "Registrar Acceso",
 					"request": {
 						"method": "POST",
@@ -1005,7 +1030,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"usuario_id\": 1,\n    \"tipo\": \"entrada\",\n    \"fecha_hora\": \"2025-11-18 10:00:00\"\n}",
+							"raw": "{\n    \"idUsuario\": 1,\n    \"tipo_acceso\": \"Apertura\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -1037,7 +1062,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"tipo\": \"intruso\",\n    \"descripcion\": \"Intento de acceso no autorizado\"\n}",
+							"raw": "{\n    \"descripcion\": \"Alarma activada\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"

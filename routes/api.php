@@ -202,6 +202,7 @@ Route::prefix('esp32')->group(function () {
         Route::get('/config', [Esp32Controller::class, 'config']);
         Route::post('/huella', [Esp32Controller::class, 'huella']);
         Route::get('/usuario/{idHuella}', [Esp32Controller::class, 'getUsuarioByHuella']);
+        Route::get('/usuario/clave/{idUsuario}', [Esp32Controller::class, 'getUsuarioClave']);
         Route::post('/acceso', [Esp32Controller::class, 'acceso']);
         Route::post('/alarma', [Esp32Controller::class, 'alarma']);
         Route::get('/admin/telefono', [Esp32Controller::class, 'getAdminTelefono']);
