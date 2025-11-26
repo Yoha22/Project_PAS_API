@@ -25,7 +25,7 @@ class AdministradorSeeder extends Seeder
                 'correo' => 'yodamoju41@gmail.com',
                 'password' => 'N22y1900#', // Laravel lo hasheará automáticamente por el cast
                 'telefono_admin' => '3174661434',
-                'codigo' => 123456,
+                'codigo' => 7116537,
             ]);
             
             $this->command->info('Administrador actualizado exitosamente!');
@@ -39,7 +39,7 @@ class AdministradorSeeder extends Seeder
                 'correo' => 'yodamoju41@gmail.com',
                 'password' => Hash::make('N22y1900#'),
                 'telefono_admin' => '3174661434',
-                'codigo' => 123456,
+                'codigo' => 7116537,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
