@@ -28,7 +28,7 @@ APIClient* apiClient = nullptr;
 
 // Pines
 const int relayPin = 4;
-const int relayFailPin = 5;
+const int relayFailPin = 5; // Pin para relé de fallo/alarma (también activa el buzzer)
 const int panicButtonPin = 12;
 
 // Pines del teclado 4x4
@@ -221,7 +221,7 @@ void setup() {
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, LOW);
   pinMode(relayFailPin, OUTPUT);
-  digitalWrite(relayFailPin, LOW);
+  digitalWrite(relayFailPin, LOW); // relayFailPin también controla el buzzer
   pinMode(panicButtonPin, INPUT_PULLUP);
   
   // Configurar pines del teclado
@@ -1441,6 +1441,7 @@ void handlePasswordInput() {
   }
   
   // Verificar timeout - solo aplica si NO está activando alarma
+  // Cuando la alarma está activa, NO hay timeout (se espera indefinidamente el código)
   if (!alarmaActiva && (millis() - passwordStartTime > PASSWORD_TIMEOUT)) {
     Serial.println("⏱️ TIMEOUT: No se ingresó código en 30 segundos");
     lcd.clear();
@@ -1456,6 +1457,12 @@ void handlePasswordInput() {
     delay(2000);
     activarAlarma();
     // No resetear estado aquí, activarAlarma ya lo configura
+  }
+  
+  // Si la alarma está activa, asegurarse de que el estado esté configurado correctamente
+  if (alarmaActiva && waitingForPassword) {
+    // El sistema está esperando código para desactivar la alarma
+    // No hacer nada más, solo mantener el buzzer activo
   }
 }
 
@@ -1597,9 +1604,9 @@ void verifyPassword() {
       lcd.setCursor(0, 1);
       lcd.print("Codigo valido");
       
-      // Desactivar alarma
+      // Desactivar alarma (relé y buzzer se apagan juntos)
       alarmaActiva = false;
-      digitalWrite(relayFailPin, LOW);
+      digitalWrite(relayFailPin, LOW); // Apaga tanto el relé como el buzzer
       failedAttempts = 0;
       
       delay(2000);
@@ -1608,6 +1615,7 @@ void verifyPassword() {
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Esperando user");
+      Serial.println("✅ Alarma desactivada correctamente (relé y buzzer OFF)");
       return;
     } else {
       Serial.println("❌ CÓDIGO INVÁLIDO - Alarma sigue activa");
@@ -1755,17 +1763,37 @@ void verifyFingerprint() {
     Serial.println("Huella reconocida!");
     uint8_t id = finger.fingerID;
     int idUsuario;
-    String userName = getUserNameFromID(id, idUsuario);
+    bool backendResponseValid = false; // Indica si recibimos respuesta válida del backend
+    String userName = getUserNameFromID(id, idUsuario, backendResponseValid);
     
     // REINICIAR CONTADOR DE INTENTOS FALLIDOS CUANDO LA HUELLA ES RECONOCIDA
     failedAttempts = 0;
     
-    if (idUsuario == 0) {
+    // SOLO eliminar huella si:
+    // 1. El backend respondió correctamente (backendResponseValid == true)
+    // 2. Y el backend confirmó que no existe el usuario (idUsuario == 0 y userName vacío)
+    // NO eliminar si hay error de conexión/timeout (backendResponseValid == false)
+    if (backendResponseValid && idUsuario == 0 && userName.length() == 0) {
+      Serial.println("⚠️ Backend confirmó que la huella no está asociada a ningún usuario - Eliminando huella huérfana");
       if (deleteFingerprint(id)) {
-        Serial.println("Huella eliminada porque el ID del usuario es 0");
+        Serial.println("✅ Huella eliminada correctamente");
       } else {
-        Serial.println("Error al eliminar la huella con ID 0");
+        Serial.println("❌ Error al eliminar la huella");
       }
+      return;
+    } else if (!backendResponseValid) {
+      // Error de conexión/timeout - NO eliminar huella, solo loguear
+      Serial.println("⚠️ ERROR: No se pudo verificar usuario en backend (error de conexión/timeout)");
+      Serial.println("⚠️ La huella NO será eliminada para evitar pérdida de datos por errores temporales");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error conexion");
+      lcd.setCursor(0, 1);
+      lcd.print("Reintentar...");
+      delay(2000);
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Esperando user");
       return;
     }
 
@@ -1829,8 +1857,9 @@ void verifyFingerprint() {
   }
 }
 
-String getUserNameFromID(uint8_t idHuella, int &idUsuario) {
+String getUserNameFromID(uint8_t idHuella, int &idUsuario, bool &backendResponseValid) {
   idUsuario = 0; // Inicializar por defecto
+  backendResponseValid = false; // Inicializar como no válida
   
   if (!apiClient) {
     Serial.println("ERROR: API Client no disponible en getUserNameFromID");
@@ -1842,7 +1871,8 @@ String getUserNameFromID(uint8_t idHuella, int &idUsuario) {
   
   // Verificar si se recibió respuesta
   if (response.length() == 0) {
-    Serial.println("ERROR: No se recibió respuesta del servidor en getUserNameFromID");
+    Serial.println("ERROR: No se recibió respuesta del servidor en getUserNameFromID (timeout/error de conexión)");
+    backendResponseValid = false; // Respuesta no válida (error de conexión)
     return "";
   }
   
@@ -1854,14 +1884,19 @@ String getUserNameFromID(uint8_t idHuella, int &idUsuario) {
     Serial.println(error.c_str());
     Serial.print("Respuesta recibida: ");
     Serial.println(response);
+    backendResponseValid = false; // Respuesta no válida (JSON inválido)
     return "";
   }
   
   // Validar que los campos existen antes de acceder
   if (!doc.containsKey("nombre") || !doc.containsKey("idUsuario")) {
     Serial.println("ERROR: Respuesta JSON no contiene campos esperados");
+    backendResponseValid = false; // Respuesta no válida (campos faltantes)
     return "";
   }
+  
+  // Si llegamos aquí, la respuesta del backend es válida
+  backendResponseValid = true;
   
   String nombre = doc["nombre"].as<String>();
   idUsuario = doc["idUsuario"].as<int>();
@@ -2232,7 +2267,9 @@ void sendHybridAlert() {
 void activarAlarma() {
   Serial.println("🔴 ACTIVANDO ALARMA - Estado persistente");
   alarmaActiva = true;
+  // relayFailPin activa tanto el relé de fallo como el buzzer
   digitalWrite(relayFailPin, HIGH);
+  
   sendHybridAlert(); // Enviar WhatsApp y llamada
   registrarAlarmaEnBD("Alarma activada");
   
@@ -2251,5 +2288,7 @@ void activarAlarma() {
   passwordStartTime = millis();
   currentUserID = 0; // 0 indica que es para desactivar alarma (verificar contra cualquier usuario)
   currentPassword = "";
+  
+  Serial.println("✅ Alarma activada (relé y buzzer ON) - Esperando código de desactivación");
 }
 
