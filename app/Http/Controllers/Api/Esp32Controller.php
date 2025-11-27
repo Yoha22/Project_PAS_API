@@ -575,7 +575,7 @@ class Esp32Controller extends Controller
         $esp32Ip = $validated['ip'];
         $urlInfo = $this->buildEsp32Url('registrarHuella', $esp32Ip);
         $url = $urlInfo['url'];
-        $timeout = 35; // segundos (tiempo suficiente para capturar huella)
+        $timeout = 60; // segundos (tiempo suficiente para capturar huella + posibles reintentos del ESP32 al backend)
 
         try {
             $connectStart = microtime(true);
