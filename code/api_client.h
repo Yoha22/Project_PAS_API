@@ -18,7 +18,7 @@ public:
     useHTTPS = config->useHTTPS;
     if (useHTTPS) {
       clientSecure.setInsecure(); // Para desarrollo, en producción usar certificados
-      clientSecure.setTimeout(30000); // Timeout de 30 segundos para conexiones HTTPS
+      clientSecure.setTimeout(90000); // Timeout de 90 segundos para conexiones HTTPS (60 segundos adicionales para confirmación de huella)
     }
   }
   
@@ -137,8 +137,8 @@ private:
   String readResponse(Client* stream) {
     String response = "";
     unsigned long readStart = millis();
-    const unsigned long FIRST_BYTE_TIMEOUT = 15000; // 15 segundos para recibir el primer byte
-    const unsigned long READ_TIMEOUT = 30000; // 30 segundos total para leer respuesta completa
+    const unsigned long FIRST_BYTE_TIMEOUT = 75000; // 75 segundos para recibir el primer byte (60 segundos adicionales para confirmación de huella)
+    const unsigned long READ_TIMEOUT = 90000; // 90 segundos total para leer respuesta completa (60 segundos adicionales para confirmación de huella)
     const unsigned long IDLE_TIMEOUT = 5000; // 5 segundos sin datos después de recibir algo
     unsigned long lastByteTime = millis();
     unsigned long firstByteTime = 0;
