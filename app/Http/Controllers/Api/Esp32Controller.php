@@ -419,31 +419,45 @@ class Esp32Controller extends Controller
      */
     public function getConfigHtml(Request $request)
     {
+        $startTime = microtime(true);
+        $esp32Ip = $request->input('ip', '192.168.4.1');
+        
         Log::info('[ESP32-PROXY] getConfigHtml iniciado', [
-            'ip' => $request->input('ip', '192.168.4.1'),
+            'ip' => $esp32Ip,
+            'tunnel_url_configured' => !empty(env('ESP32_TUNNEL_URL')),
         ]);
 
-        $esp32Ip = $request->input('ip', '192.168.4.1');
-        $url = "http://{$esp32Ip}/";
-        $timeout = 10; // segundos
+        $urlInfo = $this->buildEsp32Url('', $esp32Ip);
+        $url = $urlInfo['url'];
+        $timeout = 15; // Aumentado para túnel
 
         try {
-            Log::info('[ESP32-PROXY] Intentando conectar a ESP32', ['url' => $url]);
+            $connectStart = microtime(true);
+            Log::info('[ESP32-PROXY] Intentando conectar a ESP32 para obtener HTML', [
+                'url' => $url,
+                'timeout' => $timeout,
+            ]);
 
             $response = Http::timeout($timeout)
-                ->connectTimeout(5)
+                ->connectTimeout(10)
                 ->withOptions(['verify' => false])
                 ->withHeaders([
                     'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 ])
                 ->get($url);
 
+            $connectTime = round((microtime(true) - $connectStart) * 1000, 2);
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+
             if ($response->successful()) {
                 $html = $response->body();
 
-                Log::info('[ESP32-PROXY] Respuesta recibida', [
+                Log::info('[ESP32-PROXY] HTML recibido del ESP32', [
                     'status_code' => $response->status(),
                     'html_length' => strlen($html),
+                    'connect_time_ms' => $connectTime,
+                    'total_time_ms' => $totalTime,
+                    'use_tunnel' => $urlInfo['use_tunnel'],
                 ]);
 
                 return response()->json([
@@ -456,9 +470,14 @@ class Esp32Controller extends Controller
             }
 
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('[ESP32-PROXY] Error de conexión', [
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+            Log::error('[ESP32-PROXY] Error de conexión al obtener HTML', [
                 'url' => $url,
+                'ip' => $esp32Ip,
+                'use_tunnel' => $urlInfo['use_tunnel'],
                 'error' => $e->getMessage(),
+                'error_class' => get_class($e),
+                'total_time_ms' => $totalTime,
             ]);
 
             return response()->json([
@@ -468,10 +487,15 @@ class Esp32Controller extends Controller
             ], 503);
 
         } catch (\Exception $e) {
-            Log::error('[ESP32-PROXY] Error inesperado', [
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+            Log::error('[ESP32-PROXY] Error inesperado al obtener HTML', [
                 'url' => $url,
+                'ip' => $esp32Ip,
+                'use_tunnel' => $urlInfo['use_tunnel'],
                 'error' => $e->getMessage(),
+                'error_class' => get_class($e),
                 'trace' => $e->getTraceAsString(),
+                'total_time_ms' => $totalTime,
             ]);
 
             return response()->json([
@@ -504,8 +528,41 @@ class Esp32Controller extends Controller
      * Proxy para registrar huella en el ESP32
      * GET /api/esp32-proxy/registrar-huella
      */
+    /**
+     * Helper para construir URL del ESP32 usando túnel si está configurado
+     */
+    private function buildEsp32Url(string $path, string $ip): array
+    {
+        $tunnelUrl = env('ESP32_TUNNEL_URL');
+        $useTunnel = $tunnelUrl && filter_var($tunnelUrl, FILTER_VALIDATE_URL);
+        
+        if ($useTunnel) {
+            $url = rtrim($tunnelUrl, '/') . '/' . ltrim($path, '/');
+            Log::info('[ESP32-PROXY] buildEsp32Url: Usando túnel', [
+                'path' => $path,
+                'ip' => $ip,
+                'tunnel_url' => $tunnelUrl,
+                'final_url' => $url,
+            ]);
+        } else {
+            $url = "http://{$ip}/" . ltrim($path, '/');
+            Log::info('[ESP32-PROXY] buildEsp32Url: Usando IP local', [
+                'path' => $path,
+                'ip' => $ip,
+                'final_url' => $url,
+            ]);
+        }
+        
+        return [
+            'url' => $url,
+            'use_tunnel' => $useTunnel,
+            'tunnel_url' => $tunnelUrl,
+        ];
+    }
+
     public function proxyRegistrarHuella(Request $request)
     {
+        $startTime = microtime(true);
         Log::info('[ESP32-PROXY] proxyRegistrarHuella iniciado', [
             'ip' => $request->input('ip'),
             'tunnel_url_configured' => !empty(env('ESP32_TUNNEL_URL')),
@@ -516,30 +573,16 @@ class Esp32Controller extends Controller
         ]);
 
         $esp32Ip = $validated['ip'];
-        
-        // Verificar si hay una URL de túnel configurada (ngrok, Cloudflare Tunnel, etc.)
-        $tunnelUrl = env('ESP32_TUNNEL_URL');
-        
-        if ($tunnelUrl && filter_var($tunnelUrl, FILTER_VALIDATE_URL)) {
-            // Usar túnel si está configurado
-            $url = rtrim($tunnelUrl, '/') . "/registrarHuella";
-            Log::info('[ESP32-PROXY] Usando túnel para conectar al ESP32', [
-                'tunnel_url' => $tunnelUrl,
-                'final_url' => $url
-            ]);
-        } else {
-            // Usar IP local directa
-            $url = "http://{$esp32Ip}/registrarHuella";
-            Log::info('[ESP32-PROXY] Usando IP local para conectar al ESP32', [
-                'ip' => $esp32Ip,
-                'final_url' => $url
-            ]);
-        }
-        
+        $urlInfo = $this->buildEsp32Url('registrarHuella', $esp32Ip);
+        $url = $urlInfo['url'];
         $timeout = 35; // segundos (tiempo suficiente para capturar huella)
 
         try {
-            Log::info('[ESP32-PROXY] Intentando conectar al ESP32 para registrar huella', ['url' => $url]);
+            $connectStart = microtime(true);
+            Log::info('[ESP32-PROXY] Intentando conectar al ESP32 para registrar huella', [
+                'url' => $url,
+                'timeout' => $timeout,
+            ]);
 
             $response = Http::timeout($timeout)
                 ->connectTimeout(10)
@@ -549,12 +592,17 @@ class Esp32Controller extends Controller
                 ])
                 ->get($url);
 
+            $connectTime = round((microtime(true) - $connectStart) * 1000, 2);
             $statusCode = $response->status();
             $responseBody = $response->body();
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
 
-            Log::info('[ESP32-PROXY] Respuesta del ESP32 (registrar huella)', [
+            Log::info('[ESP32-PROXY] Respuesta del ESP32 recibida (registrar huella)', [
                 'status_code' => $statusCode,
                 'response_length' => strlen($responseBody),
+                'connect_time_ms' => $connectTime,
+                'total_time_ms' => $totalTime,
+                'use_tunnel' => $urlInfo['use_tunnel'],
             ]);
 
             if ($response->successful()) {
@@ -575,9 +623,14 @@ class Esp32Controller extends Controller
             }
 
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
             Log::error('[ESP32-PROXY] Error de conexión al registrar huella', [
                 'url' => $url,
+                'ip' => $esp32Ip,
+                'use_tunnel' => $urlInfo['use_tunnel'],
                 'error' => $e->getMessage(),
+                'error_class' => get_class($e),
+                'total_time_ms' => $totalTime,
             ]);
             return response()->json([
                 'success' => false,
@@ -585,11 +638,16 @@ class Esp32Controller extends Controller
                 'details' => $e->getMessage(),
             ], 503);
         } catch (\Illuminate\Http\Client\RequestException $e) {
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
             Log::error('[ESP32-PROXY] Error de petición HTTP al registrar huella', [
                 'url' => $url,
+                'ip' => $esp32Ip,
+                'use_tunnel' => $urlInfo['use_tunnel'],
                 'status_code' => $e->response ? $e->response->status() : 'N/A',
-                'response_body' => $e->response ? $e->response->body() : 'N/A',
+                'response_body' => $e->response ? substr($e->response->body(), 0, 500) : 'N/A', // Limitar tamaño del log
                 'error' => $e->getMessage(),
+                'error_class' => get_class($e),
+                'total_time_ms' => $totalTime,
             ]);
             return response()->json([
                 'success' => false,
@@ -597,11 +655,17 @@ class Esp32Controller extends Controller
                 'details' => $e->getMessage(),
             ], 500);
         } catch (\Throwable $e) {
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
             Log::error('[ESP32-PROXY] Error inesperado al registrar huella', [
                 'url' => $url,
+                'ip' => $esp32Ip,
+                'use_tunnel' => $urlInfo['use_tunnel'],
                 'error' => $e->getMessage(),
+                'error_class' => get_class($e),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'total_time_ms' => $totalTime,
             ]);
             return response()->json([
                 'success' => false,
@@ -617,6 +681,7 @@ class Esp32Controller extends Controller
      */
     public function postConfig(Request $request)
     {
+        $startTime = microtime(true);
         Log::info('[ESP32-PROXY] postConfig iniciado', [
             'data' => $request->except(['password']), // No loguear password
         ]);
@@ -632,7 +697,8 @@ class Esp32Controller extends Controller
         ]);
 
         $esp32Ip = $request->input('ip', '192.168.4.1');
-        $url = "http://{$esp32Ip}/config";
+        $urlInfo = $this->buildEsp32Url('config', $esp32Ip);
+        $url = $urlInfo['url'];
         $timeout = 30; // segundos (más tiempo para procesar configuración)
 
         try {
@@ -645,9 +711,11 @@ class Esp32Controller extends Controller
                 'nombre' => $validated['nombre'],
             ];
 
+            $connectStart = microtime(true);
             Log::info('[ESP32-PROXY] Enviando configuración al ESP32', [
                 'url' => $url,
                 'data' => array_merge($formData, ['password' => '***']),
+                'timeout' => $timeout,
             ]);
 
             $response = Http::timeout($timeout)
@@ -656,12 +724,17 @@ class Esp32Controller extends Controller
                 ->asForm()
                 ->post($url, $formData);
 
+            $connectTime = round((microtime(true) - $connectStart) * 1000, 2);
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
             $statusCode = $response->status();
             $responseBody = $response->body();
 
-            Log::info('[ESP32-PROXY] Respuesta del ESP32', [
+            Log::info('[ESP32-PROXY] Respuesta del ESP32 (config)', [
                 'status_code' => $statusCode,
-                'response' => $responseBody,
+                'response_length' => strlen($responseBody),
+                'connect_time_ms' => $connectTime,
+                'total_time_ms' => $totalTime,
+                'use_tunnel' => $urlInfo['use_tunnel'],
             ]);
 
             if ($response->successful()) {
@@ -779,5 +852,206 @@ class Esp32Controller extends Controller
                 'details' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Proxy para eliminar huella en ESP32
+     * POST /api/esp32-proxy/eliminar-huella
+     */
+    public function proxyEliminarHuella(Request $request)
+    {
+        $startTime = microtime(true);
+        $validated = $request->validate([
+            'ip' => 'required|string|ip',
+            'id' => 'required|integer|min:1',
+        ]);
+
+        $esp32Ip = $validated['ip'];
+        $fingerprintId = $validated['id'];
+        $urlInfo = $this->buildEsp32Url('eliminarHuella', $esp32Ip);
+        $url = $urlInfo['url'];
+        $timeout = 10;
+
+        try {
+            $connectStart = microtime(true);
+            Log::info('[ESP32-PROXY] Eliminando huella en ESP32', [
+                'url' => $url,
+                'fingerprint_id' => $fingerprintId,
+            ]);
+
+            $response = Http::timeout($timeout)
+                ->connectTimeout(10)
+                ->withOptions(['verify' => false])
+                ->asForm()
+                ->post($url, ['id' => $fingerprintId]);
+
+            $connectTime = round((microtime(true) - $connectStart) * 1000, 2);
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+            $statusCode = $response->status();
+            $responseBody = $response->body();
+
+            Log::info('[ESP32-PROXY] Respuesta del ESP32 (eliminar huella)', [
+                'status_code' => $statusCode,
+                'fingerprint_id' => $fingerprintId,
+                'connect_time_ms' => $connectTime,
+                'total_time_ms' => $totalTime,
+                'use_tunnel' => $urlInfo['use_tunnel'],
+            ]);
+
+            if ($response->successful()) {
+                $jsonResponse = json_decode($responseBody, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    return response()->json($jsonResponse, $statusCode);
+                }
+                return response()->json(['success' => true], $statusCode);
+            } else {
+                throw new \Exception("HTTP {$statusCode}: {$responseBody}");
+            }
+
+        } catch (\Throwable $e) {
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+            Log::error('[ESP32-PROXY] Error al eliminar huella', [
+                'url' => $url,
+                'fingerprint_id' => $fingerprintId,
+                'use_tunnel' => $urlInfo['use_tunnel'],
+                'error' => $e->getMessage(),
+                'total_time_ms' => $totalTime,
+            ]);
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al eliminar huella en el ESP32',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Proxy para obtener estado del ESP32
+     * GET /api/esp32-proxy/status
+     */
+    public function proxyGetStatus(Request $request)
+    {
+        $startTime = microtime(true);
+        $validated = $request->validate([
+            'ip' => 'required|string|ip',
+        ]);
+
+        $esp32Ip = $validated['ip'];
+        $urlInfo = $this->buildEsp32Url('status', $esp32Ip);
+        $url = $urlInfo['url'];
+        $timeout = 10;
+
+        try {
+            $connectStart = microtime(true);
+            Log::info('[ESP32-PROXY] Obteniendo estado del ESP32', ['url' => $url]);
+
+            $response = Http::timeout($timeout)
+                ->connectTimeout(10)
+                ->withOptions(['verify' => false])
+                ->get($url);
+
+            $connectTime = round((microtime(true) - $connectStart) * 1000, 2);
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+
+            if ($response->successful()) {
+                $jsonResponse = json_decode($response->body(), true);
+                Log::info('[ESP32-PROXY] Estado recibido del ESP32', [
+                    'connect_time_ms' => $connectTime,
+                    'total_time_ms' => $totalTime,
+                    'use_tunnel' => $urlInfo['use_tunnel'],
+                ]);
+                return response()->json($jsonResponse, $response->status());
+            } else {
+                throw new \Exception("HTTP {$response->status()}: {$response->body()}");
+            }
+
+        } catch (\Throwable $e) {
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+            Log::error('[ESP32-PROXY] Error al obtener estado', [
+                'url' => $url,
+                'use_tunnel' => $urlInfo['use_tunnel'],
+                'error' => $e->getMessage(),
+                'total_time_ms' => $totalTime,
+            ]);
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al obtener estado del ESP32',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Endpoint de diagnóstico para probar conexión con ESP32
+     * GET /api/esp32-proxy/diagnose
+     */
+    public function diagnoseTunnel(Request $request)
+    {
+        $validated = $request->validate([
+            'ip' => 'required|string|ip',
+        ]);
+
+        $esp32Ip = $validated['ip'];
+        $tunnelUrl = env('ESP32_TUNNEL_URL');
+        $results = [
+            'ip' => $esp32Ip,
+            'tunnel_configured' => !empty($tunnelUrl) && filter_var($tunnelUrl, FILTER_VALIDATE_URL),
+            'tunnel_url' => $tunnelUrl,
+            'tests' => [],
+        ];
+
+        // Test 1: Conexión vía túnel (si está configurado)
+        if ($results['tunnel_configured']) {
+            $tunnelUrlFull = rtrim($tunnelUrl, '/') . '/status';
+            try {
+                $startTime = microtime(true);
+                $response = Http::timeout(10)
+                    ->connectTimeout(5)
+                    ->withOptions(['verify' => false])
+                    ->get($tunnelUrlFull);
+                $time = round((microtime(true) - $startTime) * 1000, 2);
+
+                $results['tests']['tunnel'] = [
+                    'success' => $response->successful(),
+                    'status_code' => $response->status(),
+                    'response_time_ms' => $time,
+                    'url' => $tunnelUrlFull,
+                ];
+            } catch (\Throwable $e) {
+                $results['tests']['tunnel'] = [
+                    'success' => false,
+                    'error' => $e->getMessage(),
+                    'url' => $tunnelUrlFull,
+                ];
+            }
+        }
+
+        // Test 2: Conexión vía IP local
+        try {
+            $localUrl = "http://{$esp32Ip}/status";
+            $startTime = microtime(true);
+            $response = Http::timeout(5)
+                ->connectTimeout(3)
+                ->withOptions(['verify' => false])
+                ->get($localUrl);
+            $time = round((microtime(true) - $startTime) * 1000, 2);
+
+            $results['tests']['local'] = [
+                'success' => $response->successful(),
+                'status_code' => $response->status(),
+                'response_time_ms' => $time,
+                'url' => $localUrl,
+            ];
+        } catch (\Throwable $e) {
+            $results['tests']['local'] = [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'url' => $localUrl,
+            ];
+        }
+
+        Log::info('[ESP32-PROXY] Diagnóstico completado', $results);
+
+        return response()->json($results, 200);
     }
 }

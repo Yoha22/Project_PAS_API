@@ -1034,27 +1034,85 @@ void handleEnrollFingerprint() {
   
   p = getFingerprintEnroll(id);
   if (p == FINGERPRINT_OK) {
-    // Enviar huella a Laravel API
+    Serial.println("[HUella] Huella capturada exitosamente en sensor");
+    
+    // Enviar huella a Laravel API con retry logic
     DynamicJsonDocument doc(256);
     doc["idHuella"] = id;
     String jsonData;
     serializeJson(doc, jsonData);
     
-    String response = apiClient->post("/api/esp32/huella", jsonData.c_str());
+    Serial.println("[HUella] Enviando huella al backend...");
+    bool backendSuccess = false;
+    int retryCount = 0;
+    const int MAX_RETRIES = 3;
     
-    DynamicJsonDocument responseDoc(256);
-    deserializeJson(responseDoc, response);
+    while (retryCount < MAX_RETRIES && !backendSuccess) {
+      if (retryCount > 0) {
+        Serial.print("[HUella] Reintento ");
+        Serial.print(retryCount);
+        Serial.print(" de ");
+        Serial.println(MAX_RETRIES - 1);
+        delay(1000 * retryCount); // Exponential backoff
+      }
+      
+      String response = apiClient->post("/api/esp32/huella", jsonData.c_str());
+      
+      Serial.print("[HUella] Respuesta del backend recibida (");
+      Serial.print(response.length());
+      Serial.println(" bytes)");
+      
+      if (response.length() == 0) {
+        Serial.println("[HUella] ERROR: Respuesta vacía del backend");
+        retryCount++;
+        continue;
+      }
+      
+      Serial.print("[HUella] Contenido respuesta: ");
+      Serial.println(response);
+      
+      DynamicJsonDocument responseDoc(512);
+      DeserializationError error = deserializeJson(responseDoc, response);
+      
+      if (error) {
+        Serial.print("[HUella] ERROR parseando JSON: ");
+        Serial.println(error.c_str());
+        Serial.print("[HUella] Respuesta cruda: ");
+        Serial.println(response);
+        retryCount++;
+        continue;
+      }
+      
+      // Verificar si la respuesta tiene success
+      if (responseDoc.containsKey("success") && responseDoc["success"] == true) {
+        Serial.println("[HUella] Huella registrada exitosamente en backend");
+        backendSuccess = true;
+      } else {
+        String errorMsg = "Error desconocido";
+        if (responseDoc.containsKey("error")) {
+          errorMsg = responseDoc["error"].as<String>();
+        }
+        Serial.print("[HUella] ERROR del backend: ");
+        Serial.println(errorMsg);
+        retryCount++;
+      }
+    }
     
-    if (responseDoc["success"]) {
-      addCORSHeaders(server);
+    // Responder al frontend siempre con éxito si la huella se capturó
+    // (aunque el backend pueda haber fallado, la huella está en el sensor)
+    addCORSHeaders(server);
+    if (backendSuccess) {
       server.send(200, "application/json", "{\"success\": true, \"idHuella\": " + String(id) + "}");
     } else {
-      addCORSHeaders(server);
-      server.send(500, "application/json", "{\"success\": false, \"error\": \"Error al enviar huella al servidor\"}");
+      // Avisar pero no fallar completamente
+      Serial.println("[HUella] ADVERTENCIA: Huella capturada pero no se pudo enviar al backend después de " + String(MAX_RETRIES) + " intentos");
+      server.send(200, "application/json", "{\"success\": true, \"idHuella\": " + String(id) + ", \"warning\": \"Huella capturada pero no se pudo enviar al backend\"}");
     }
   } else {
+    Serial.print("[HUella] ERROR al registrar huella en sensor. Código: ");
+    Serial.println(p);
     addCORSHeaders(server);
-    server.send(500, "application/json", "{\"success\": false, \"error\": \"Error al registrar la huella\"}");
+    server.send(500, "application/json", "{\"success\": false, \"error\": \"Error al registrar la huella en el sensor\"}");
   }
   
   lcd.clear();

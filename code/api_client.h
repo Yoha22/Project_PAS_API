@@ -24,13 +24,26 @@ public:
   
   // Realizar petición GET
   String get(const char* endpoint, bool useAuth = true) {
+    return request("GET", endpoint, nullptr, useAuth);
+  }
+  
+  // Realizar petición POST
+  String post(const char* endpoint, const char* data, bool useAuth = true) {
+    return request("POST", endpoint, data, useAuth);
+  }
+  
+private:
+  // Método interno para realizar peticiones HTTP
+  String request(const char* method, const char* endpoint, const char* data, bool useAuth) {
     String url = String(config->serverUrl) + endpoint;
-    Serial.print("GET: ");
+    Serial.print("[API] ");
+    Serial.print(method);
+    Serial.print(": ");
     Serial.println(url);
     
     if (useHTTPS) {
       String host = extractHost(url);
-      Serial.print("Conectando a HTTPS: ");
+      Serial.print("[API] Conectando a HTTPS: ");
       Serial.print(host);
       Serial.print(":");
       Serial.println(config->serverPort);
@@ -40,26 +53,35 @@ public:
       unsigned long connectTime = millis() - connectStart;
       
       if (!connected) {
-        Serial.print("Error de conexión HTTPS después de ");
+        Serial.print("[API] ERROR: Conexión HTTPS falló después de ");
         Serial.print(connectTime);
         Serial.println(" ms");
-        Serial.print("Host: ");
+        Serial.print("[API] Host: ");
         Serial.println(host);
-        Serial.print("Puerto: ");
+        Serial.print("[API] Puerto: ");
         Serial.println(config->serverPort);
         clientSecure.stop();
         return "";
       }
       
-      Serial.print("Conectado exitosamente en ");
+      Serial.print("[API] Conectado exitosamente en ");
       Serial.print(connectTime);
       Serial.println(" ms");
       
-      clientSecure.print("GET ");
+      // Enviar request
+      clientSecure.print(method);
+      clientSecure.print(" ");
       clientSecure.print(extractPath(url).c_str());
       clientSecure.println(" HTTP/1.1");
       clientSecure.print("Host: ");
       clientSecure.println(host);
+      
+      if (data != nullptr) {
+        clientSecure.println("Content-Type: application/json");
+        clientSecure.print("Content-Length: ");
+        clientSecure.println(strlen(data));
+      }
+      
       if (useAuth) {
         clientSecure.print("Authorization: Bearer ");
         clientSecure.println(config->deviceToken);
@@ -67,18 +89,37 @@ public:
       clientSecure.println("Connection: close");
       clientSecure.println();
       
+      if (data != nullptr) {
+        clientSecure.print(data);
+        Serial.print("[API] Request body enviado (");
+        Serial.print(strlen(data));
+        Serial.println(" bytes)");
+      }
+      
       return readResponse(&clientSecure);
     } else {
-      if (!client.connect(extractHost(url).c_str(), config->serverPort)) {
-        Serial.println("Error de conexión HTTP");
+      String host = extractHost(url);
+      if (!client.connect(host.c_str(), config->serverPort)) {
+        Serial.println("[API] ERROR: Conexión HTTP falló");
         return "";
       }
       
-      client.print("GET ");
+      Serial.println("[API] Conectado vía HTTP");
+      
+      // Enviar request
+      client.print(method);
+      client.print(" ");
       client.print(extractPath(url).c_str());
       client.println(" HTTP/1.1");
       client.print("Host: ");
-      client.println(extractHost(url).c_str());
+      client.println(host);
+      
+      if (data != nullptr) {
+        client.println("Content-Type: application/json");
+        client.print("Content-Length: ");
+        client.println(strlen(data));
+      }
+      
       if (useAuth) {
         client.print("Authorization: Bearer ");
         client.println(config->deviceToken);
@@ -86,152 +127,202 @@ public:
       client.println("Connection: close");
       client.println();
       
-      return readResponse(&client);
-    }
-  }
-  
-  // Realizar petición POST
-  String post(const char* endpoint, const char* data, bool useAuth = true) {
-    String url = String(config->serverUrl) + endpoint;
-    Serial.print("POST: ");
-    Serial.println(url);
-    
-    if (useHTTPS) {
-      String host = extractHost(url);
-      Serial.print("Conectando a HTTPS: ");
-      Serial.print(host);
-      Serial.print(":");
-      Serial.println(config->serverPort);
-      
-      unsigned long connectStart = millis();
-      bool connected = clientSecure.connect(host.c_str(), config->serverPort);
-      unsigned long connectTime = millis() - connectStart;
-      
-      if (!connected) {
-        Serial.print("Error de conexión HTTPS después de ");
-        Serial.print(connectTime);
-        Serial.println(" ms");
-        Serial.print("Host: ");
-        Serial.println(host);
-        Serial.print("Puerto: ");
-        Serial.println(config->serverPort);
-        clientSecure.stop();
-        return "";
+      if (data != nullptr) {
+        client.print(data);
       }
-      
-      Serial.print("Conectado exitosamente en ");
-      Serial.print(connectTime);
-      Serial.println(" ms");
-      
-      clientSecure.print("POST ");
-      clientSecure.print(extractPath(url).c_str());
-      clientSecure.println(" HTTP/1.1");
-      clientSecure.print("Host: ");
-      clientSecure.println(host);
-      clientSecure.println("Content-Type: application/json");
-      if (useAuth) {
-        clientSecure.print("Authorization: Bearer ");
-        clientSecure.println(config->deviceToken);
-      }
-      clientSecure.print("Content-Length: ");
-      clientSecure.println(strlen(data));
-      clientSecure.println();
-      clientSecure.print(data);
-      
-      return readResponse(&clientSecure);
-    } else {
-      if (!client.connect(extractHost(url).c_str(), config->serverPort)) {
-        Serial.println("Error de conexión HTTP");
-        return "";
-      }
-      
-      client.print("POST ");
-      client.print(extractPath(url).c_str());
-      client.println(" HTTP/1.1");
-      client.print("Host: ");
-      client.println(extractHost(url).c_str());
-      client.println("Content-Type: application/json");
-      if (useAuth) {
-        client.print("Authorization: Bearer ");
-        client.println(config->deviceToken);
-      }
-      client.print("Content-Length: ");
-      client.println(strlen(data));
-      client.println();
-      client.print(data);
       
       return readResponse(&client);
     }
   }
-  
-private:
   String readResponse(Client* stream) {
     String response = "";
-    unsigned long timeout = millis();
     unsigned long readStart = millis();
-    const unsigned long READ_TIMEOUT = 30000; // 30 segundos para leer respuesta
+    const unsigned long FIRST_BYTE_TIMEOUT = 15000; // 15 segundos para recibir el primer byte
+    const unsigned long READ_TIMEOUT = 30000; // 30 segundos total para leer respuesta completa
+    const unsigned long IDLE_TIMEOUT = 5000; // 5 segundos sin datos después de recibir algo
+    unsigned long lastByteTime = millis();
+    unsigned long firstByteTime = 0;
+    bool firstByteReceived = false;
+    int contentLength = -1;
+    bool isChunked = false;
+    bool connectionClosed = false;
     
-    Serial.println("Esperando respuesta del servidor...");
+    Serial.println("[API-READ] Esperando respuesta del servidor...");
+    Serial.print("[API-READ] Timeout primer byte: ");
+    Serial.print(FIRST_BYTE_TIMEOUT / 1000);
+    Serial.println(" segundos");
     
-    while (stream->connected() && millis() - timeout < READ_TIMEOUT) {
+    // Esperar primer byte con timeout más largo
+    while (!firstByteReceived && (millis() - readStart < FIRST_BYTE_TIMEOUT)) {
       if (stream->available()) {
-        char c = stream->read();
-        response += c;
-        timeout = millis(); // Resetear timeout cuando hay datos
-      } else {
-        delay(10); // Pequeño delay cuando no hay datos disponibles
-        yield(); // Mantener el sistema responsive
+        firstByteReceived = true;
+        firstByteTime = millis();
+        Serial.print("[API-READ] Primer byte recibido en ");
+        Serial.print(firstByteTime - readStart);
+        Serial.println(" ms");
+        break;
+      }
+      yield(); // Mantener sistema responsive
+      delay(10);
+    }
+    
+    if (!firstByteReceived) {
+      Serial.println("[API-READ] ERROR: Timeout esperando primer byte del servidor");
+      stream->stop();
+      return "";
+    }
+    
+    // Leer respuesta completa
+    lastByteTime = millis();
+    while ((millis() - readStart < READ_TIMEOUT) && 
+           (!connectionClosed || stream->available())) {
+      
+      // Verificar si la conexión sigue activa
+      if (!stream->connected() && !stream->available()) {
+        connectionClosed = true;
+        if (response.length() > 0) {
+          // Ya recibimos datos, esperar un poco más por datos pendientes
+          delay(100);
+          if (!stream->available()) {
+            Serial.println("[API-READ] Conexión cerrada por servidor");
+            break;
+          }
+        }
       }
       
-      // Verificar si ha pasado mucho tiempo sin datos
-      if (millis() - timeout > 5000 && response.length() == 0) {
-        Serial.println("Timeout esperando datos del servidor");
-        break;
+      // Leer datos disponibles
+      if (stream->available()) {
+        while (stream->available()) {
+          char c = stream->read();
+          response += c;
+          lastByteTime = millis(); // Actualizar tiempo del último byte
+        }
+        
+        // Intentar detectar Content-Length y Transfer-Encoding en headers
+        if (contentLength < 0 && response.indexOf("\r\n\r\n") < 0) {
+          int clPos = response.indexOf("Content-Length:");
+          if (clPos >= 0) {
+            int clEnd = response.indexOf("\r\n", clPos);
+            if (clEnd > clPos) {
+              String clStr = response.substring(clPos + 15, clEnd);
+              clStr.trim();
+              contentLength = clStr.toInt();
+              Serial.print("[API-READ] Content-Length detectado: ");
+              Serial.println(contentLength);
+            }
+          }
+          
+          // Detectar Transfer-Encoding: chunked
+          if (response.indexOf("Transfer-Encoding: chunked") >= 0 || 
+              response.indexOf("transfer-encoding: chunked") >= 0) {
+            isChunked = true;
+            Serial.println("[API-READ] Respuesta en formato chunked detectada");
+          }
+        }
+        
+        // Si tenemos Content-Length y ya recibimos todo, salir
+        if (contentLength > 0) {
+          int bodyStart = response.indexOf("\r\n\r\n");
+          if (bodyStart >= 0) {
+            int bodyLength = response.length() - (bodyStart + 4);
+            if (bodyLength >= contentLength) {
+              Serial.println("[API-READ] Respuesta completa recibida (Content-Length)");
+              break;
+            }
+          }
+        }
+      } else {
+        // Si no hay datos disponibles, verificar timeout de inactividad
+        if (response.length() > 0 && (millis() - lastByteTime > IDLE_TIMEOUT)) {
+          Serial.println("[API-READ] Timeout de inactividad después de recibir datos");
+          break;
+        }
+        yield();
+        delay(10);
+      }
+      
+      // Para respuestas chunked, verificar si terminó (último chunk es "0\r\n\r\n")
+      if (isChunked && response.length() > 0) {
+        int lastChunkPos = response.lastIndexOf("0\r\n\r\n");
+        if (lastChunkPos >= 0 && lastChunkPos > response.length() - 10) {
+          Serial.println("[API-READ] Respuesta chunked completa detectada");
+          break;
+        }
       }
     }
     
     unsigned long readTime = millis() - readStart;
-    Serial.print("Tiempo de lectura: ");
+    Serial.print("[API-READ] Tiempo total de lectura: ");
     Serial.print(readTime);
-    Serial.print(" ms, Bytes recibidos: ");
+    Serial.println(" ms");
+    Serial.print("[API-READ] Bytes recibidos: ");
     Serial.println(response.length());
     
-    // Verificar si la respuesta está en formato chunked
-    bool isChunked = response.indexOf("Transfer-Encoding: chunked") >= 0 || 
-                     response.indexOf("transfer-encoding: chunked") >= 0;
+    if (response.length() == 0) {
+      Serial.println("[API-READ] ERROR: No se recibió ninguna respuesta");
+      stream->stop();
+      return "";
+    }
     
-    // Extraer JSON del cuerpo de la respuesta
-    int jsonStart = response.indexOf("\r\n\r\n");
-    if (jsonStart >= 0) {
-      String body = response.substring(jsonStart + 4);
-      body.trim();
+    // Cerrar conexión explícitamente
+    stream->stop();
+    
+    // Detectar formato chunked si no se detectó antes
+    if (!isChunked) {
+      isChunked = response.indexOf("Transfer-Encoding: chunked") >= 0 || 
+                  response.indexOf("transfer-encoding: chunked") >= 0;
+    }
+    
+    // Extraer cuerpo de la respuesta
+    int headerEnd = response.indexOf("\r\n\r\n");
+    String body = "";
+    
+    if (headerEnd >= 0) {
+      body = response.substring(headerEnd + 4);
       
-      // Si es chunked, decodificar
-      if (isChunked) {
-        body = decodeChunkedResponse(body);
+      // Log de headers para depuración
+      String headers = response.substring(0, headerEnd);
+      int statusLineEnd = headers.indexOf("\r\n");
+      if (statusLineEnd > 0) {
+        Serial.print("[API-READ] Status: ");
+        Serial.println(headers.substring(0, statusLineEnd));
       }
       
-      // Buscar JSON directamente si no se encontró
-      int jsonPos = body.indexOf("{");
-      if (jsonPos >= 0) {
+    } else {
+      // Si no se encontró separador de headers, asumir que toda la respuesta es el body
+      body = response;
+    }
+    
+    body.trim();
+    
+    // Si es chunked, decodificar
+    if (isChunked && body.length() > 0) {
+      Serial.println("[API-READ] Decodificando respuesta chunked...");
+      body = decodeChunkedResponse(body);
+      Serial.print("[API-READ] Tamaño después de decodificar: ");
+      Serial.println(body.length());
+    }
+    
+    // Extraer JSON del cuerpo
+    if (body.length() > 0) {
+      int jsonStart = body.indexOf("{");
+      if (jsonStart >= 0) {
         int jsonEnd = body.lastIndexOf("}");
-        if (jsonEnd > jsonPos) {
-          return body.substring(jsonPos, jsonEnd + 1);
+        if (jsonEnd > jsonStart) {
+          String jsonBody = body.substring(jsonStart, jsonEnd + 1);
+          Serial.print("[API-READ] JSON extraído (");
+          Serial.print(jsonBody.length());
+          Serial.println(" bytes)");
+          return jsonBody;
         }
       }
       
+      // Si no es JSON, devolver el body completo (puede ser texto plano)
+      Serial.println("[API-READ] Respuesta no es JSON, devolviendo body completo");
       return body;
     }
     
-    // Si no se encontró \r\n\r\n, buscar JSON directamente
-    int jsonStart2 = response.indexOf("{");
-    if (jsonStart2 >= 0) {
-      int jsonEnd2 = response.lastIndexOf("}");
-      if (jsonEnd2 > jsonStart2) {
-        return response.substring(jsonStart2, jsonEnd2 + 1);
-      }
-    }
-    
+    Serial.println("[API-READ] ERROR: No se pudo extraer cuerpo de la respuesta");
     return "";
   }
   
