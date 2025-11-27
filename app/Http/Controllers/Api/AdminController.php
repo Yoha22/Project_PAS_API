@@ -11,7 +11,8 @@ class AdminController extends Controller
 {
     public function index()
     {
-        $administradores = Administrador::select('id', 'correo', 'telefono_admin', 'codigo')->get();
+        // NO incluir código ni password por seguridad
+        $administradores = Administrador::select('id', 'correo', 'telefono_admin')->get();
         
         return response()->json([
             'success' => true,
@@ -21,13 +22,42 @@ class AdminController extends Controller
 
     public function show(string $id)
     {
-        $administrador = Administrador::select('id', 'correo', 'telefono_admin', 'codigo')
+        // NO incluir código ni password por seguridad
+        $administrador = Administrador::select('id', 'correo', 'telefono_admin')
             ->findOrFail($id);
         
         return response()->json([
             'success' => true,
             'data' => $administrador,
         ]);
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'correo' => 'required|email|max:30|unique:administradores,correo',
+            'password' => 'required|string|min:6|regex:/[\W]/',
+            'telefono' => 'required|string|size:10|regex:/^[0-9]+$/',
+            'codigo' => 'required|integer|unique:administradores,codigo',
+        ]);
+
+        $administrador = Administrador::create([
+            'correo' => $validated['correo'],
+            'password' => Hash::make($validated['password']),
+            'telefono_admin' => $validated['telefono'],
+            'codigo' => $validated['codigo'],
+        ]);
+
+        // NO devolver password ni código en la respuesta
+        return response()->json([
+            'success' => true,
+            'message' => 'Administrador creado exitosamente.',
+            'data' => [
+                'id' => $administrador->id,
+                'correo' => $administrador->correo,
+                'telefono_admin' => $administrador->telefono_admin,
+            ],
+        ], 201);
     }
 
     public function update(Request $request, string $id)
@@ -37,19 +67,36 @@ class AdminController extends Controller
         $validated = $request->validate([
             'correo' => 'required|email|max:30|unique:administradores,correo,' . $id,
             'telefono' => 'nullable|string|size:10|regex:/^[0-9]+$/',
-            'codigo' => 'required|integer',
+            'password' => 'nullable|string|min:6|regex:/[\W]/',
+            'codigo' => 'nullable|integer|unique:administradores,codigo,' . $id,
         ]);
 
-        $administrador->update([
+        $updateData = [
             'correo' => $validated['correo'],
             'telefono_admin' => $validated['telefono'] ?? null,
-            'codigo' => $validated['codigo'],
-        ]);
+        ];
 
+        // Solo actualizar password si se proporciona
+        if (isset($validated['password']) && $validated['password']) {
+            $updateData['password'] = Hash::make($validated['password']);
+        }
+
+        // Solo actualizar código si se proporciona
+        if (isset($validated['codigo']) && $validated['codigo']) {
+            $updateData['codigo'] = $validated['codigo'];
+        }
+
+        $administrador->update($updateData);
+
+        // NO devolver password ni código en la respuesta
         return response()->json([
             'success' => true,
             'message' => 'Administrador actualizado correctamente.',
-            'data' => $administrador->fresh(['id', 'correo', 'telefono_admin', 'codigo']),
+            'data' => [
+                'id' => $administrador->id,
+                'correo' => $administrador->correo,
+                'telefono_admin' => $administrador->telefono_admin,
+            ],
         ]);
     }
 
