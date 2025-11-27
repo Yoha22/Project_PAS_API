@@ -144,6 +144,28 @@ class Esp32Controller extends Controller
     }
 
     /**
+     * Buscar usuario por código/clave (para desactivar alarma)
+     * GET /api/esp32/usuario/por-clave/{codigo}
+     */
+    public function getUsuarioPorClave(Request $request, string $codigo)
+    {
+        $usuario = Usuario::where('clave', $codigo)->first();
+
+        if (!$usuario) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Código no encontrado',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'idUsuario' => $usuario->id,
+            'nombre' => $usuario->nombre,
+        ]);
+    }
+
+    /**
      * Registrar acceso de usuario
      * POST /api/esp32/acceso
      */

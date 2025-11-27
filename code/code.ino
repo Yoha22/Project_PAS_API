@@ -53,13 +53,16 @@ int failedAttempts = 0;
 unsigned long lastDebounceTime = 0;
 unsigned long debounceDelay = 50;
 unsigned long passwordStartTime = 0;
-const unsigned long PASSWORD_TIMEOUT = 20000; // 20 segundos
+const unsigned long PASSWORD_TIMEOUT = 30000; // 30 segundos (según flujo deseado)
 String callMeBotAPIKey = "";
 
 // Variables para sistema de contraseña
 String currentPassword = "";
 int currentUserID = 0;
 String currentUserName = "";
+
+// Variables para sistema de alarma
+bool alarmaActiva = false;
 
 // Variables para manejo de errores y watchdog
 unsigned long lastWatchdogFeed = 0;
@@ -273,11 +276,23 @@ void loop() {
     return; // No procesar huellas o teclado durante este tiempo
   }
   
-  // Después del período de acceso concedido, esperar a que el dedo se retire
-  if (accessGranted) {
-    // Esperar a que el dedo se retire del sensor antes de continuar (con timeout)
+  // Manejar cierre automático de puerta después del tiempo de acceso
+  if (accessGranted && !waitingForPassword) {
+    // Si ya pasó el tiempo de acceso y no estamos esperando código, cerrar puerta
+    if (millis() - accessGrantedTime >= ACCESS_DURATION) {
+      digitalWrite(relayPin, LOW);
+      accessGranted = false;
+      Serial.println("Puerta cerrada automáticamente (tiempo de acceso completado)");
+    }
+  } else if (accessGranted && waitingForPassword) {
+    // Si estamos esperando código, mantener la puerta abierta hasta timeout o código correcto
+    // El timeout se maneja en handlePasswordInput()
+  }
+  
+  // Esperar a que el dedo se retire del sensor después de conceder acceso
+  if (accessGranted && !waitingForPassword) {
     unsigned long waitStart = millis();
-    const unsigned long MAX_FINGER_WAIT = 10000; // Máximo 10 segundos
+    const unsigned long MAX_FINGER_WAIT = 5000; // Máximo 5 segundos
     
     while (finger.getImage() != FINGERPRINT_NOFINGER && (millis() - waitStart < MAX_FINGER_WAIT)) {
       yield(); // Mantener el sistema responsive durante la espera
@@ -289,14 +304,26 @@ void loop() {
     if (millis() - waitStart >= MAX_FINGER_WAIT) {
       Serial.println("WARNING: Timeout esperando que el dedo se retire");
     }
-    
-    accessGranted = false;
-    // Pequeño delay adicional para estabilizar
-    delay(500);
   }
   
   if (!isRegistering) {
-    if (!waitingForPassword) {
+    // Si la alarma está activa, priorizar entrada de código para desactivarla
+    if (alarmaActiva) {
+      if (!waitingForPassword) {
+        // Si no está esperando contraseña, configurar para desactivar alarma
+        waitingForPassword = true;
+        passwordStartTime = millis();
+        currentUserID = 0; // 0 indica desactivar alarma
+        currentPassword = "";
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("  ALARMA ON   ");
+        lcd.setCursor(0, 1);
+        lcd.print("Ingrese codigo");
+      } else {
+        handlePasswordInput();
+      }
+    } else if (!waitingForPassword) {
       verifyFingerprint();
     } else {
       handlePasswordInput();
@@ -1374,35 +1401,67 @@ void handlePasswordInput() {
       // Limpiar contraseña
       currentPassword = "";
       lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("Ingrese clave:");
-      lcd.setCursor(0, 1);
-      lcd.print("*");
+      if (alarmaActiva) {
+        lcd.setCursor(0, 0);
+        lcd.print("  ALARMA ON   ");
+        lcd.setCursor(0, 1);
+        lcd.print("Ingrese codigo");
+      } else {
+        lcd.setCursor(0, 0);
+        lcd.print("Ingrese clave:");
+        lcd.setCursor(0, 1);
+        lcd.print("*");
+      }
     } else if (currentPassword.length() < 6) {
       // Agregar dígito a la contraseña
       currentPassword += key;
       lcd.setCursor(0, 1);
-      for (int i = 0; i < currentPassword.length(); i++) {
-        lcd.print('*');
+      // Mostrar asteriscos según el contexto
+      if (alarmaActiva) {
+        lcd.setCursor(0, 1);
+        lcd.print("Codigo:");
+        lcd.setCursor(8, 1);
+        for (int i = 0; i < currentPassword.length(); i++) {
+          lcd.print('*');
+        }
+      } else {
+        lcd.setCursor(0, 1);
+        for (int i = 0; i < currentPassword.length(); i++) {
+          lcd.print('*');
+        }
       }
     }
   }
   
-  // Verificar timeout
-  if (millis() - passwordStartTime > PASSWORD_TIMEOUT) {
+  // Verificar timeout - solo aplica si NO está activando alarma
+  if (!alarmaActiva && (millis() - passwordStartTime > PASSWORD_TIMEOUT)) {
+    Serial.println("⏱️ TIMEOUT: No se ingresó código en 30 segundos");
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Timeout!");
     lcd.setCursor(0, 1);
     lcd.print("Alarma activada");
+    
+    // Cerrar puerta si está abierta
+    digitalWrite(relayPin, LOW);
+    accessGranted = false;
+    
     delay(2000);
     activarAlarma();
-    resetPasswordState();
+    // No resetear estado aquí, activarAlarma ya lo configura
   }
 }
 
 // Función para resetear estado de contraseña
 void resetPasswordState() {
+  // NO resetear si la alarma está activa (necesitamos seguir esperando código)
+  if (alarmaActiva) {
+    currentPassword = "";
+    // Mantener waitingForPassword = true para seguir esperando código
+    // Mantener currentUserID = 0 para indicar que es para desactivar alarma
+    return;
+  }
+  
   waitingForPassword = false;
   currentPassword = "";
   currentUserID = 0;
@@ -1410,6 +1469,50 @@ void resetPasswordState() {
   
   // Pequeño delay para estabilizar el sistema
   delay(100);
+}
+
+// Función para buscar usuario por código/clave (para desactivar alarma)
+int buscarUsuarioPorCodigo(String codigo) {
+  if (!apiClient) {
+    Serial.println("API Client no disponible");
+    return 0;
+  }
+  
+  Serial.print("Buscando usuario con codigo: ");
+  Serial.println(codigo);
+  
+  String endpoint = "/api/esp32/usuario/por-clave/" + codigo;
+  String response = apiClient->get(endpoint.c_str());
+  
+  if (response.length() == 0) {
+    Serial.println("No se recibió respuesta del servidor");
+    return 0;
+  }
+  
+  Serial.print("JSON Response: ");
+  Serial.println(response);
+  
+  // Parsear JSON
+  DynamicJsonDocument doc(256);
+  DeserializationError error = deserializeJson(doc, response);
+  
+  if (error) {
+    Serial.print("Error parseando JSON: ");
+    Serial.println(error.c_str());
+    return 0;
+  }
+  
+  // Verificar respuesta
+  if (doc.containsKey("success") && doc["success"] == true) {
+    if (doc.containsKey("idUsuario")) {
+      int idUsuario = doc["idUsuario"].as<int>();
+      Serial.print("Usuario encontrado con ID: ");
+      Serial.println(idUsuario);
+      return idUsuario;
+    }
+  }
+  
+  return 0; // No se encontró usuario con ese código
 }
 
 // Función para obtener contraseña del usuario usando API
@@ -1468,10 +1571,62 @@ String getUserPasswordFromID(int idUsuario) {
 
 // Función para verificar contraseña
 void verifyPassword() {
-  Serial.print("Verificando clave para usuario ID: ");
-  Serial.println(currentUserID);
-  Serial.print("Clave ingresada: ");
+  Serial.print("Verificando clave. Usuario ID: ");
+  Serial.print(currentUserID);
+  Serial.print(", Clave ingresada: ");
   Serial.println(currentPassword);
+  
+  // Caso especial: Desactivar alarma (currentUserID == 0)
+  if (currentUserID == 0 && alarmaActiva) {
+    Serial.println("🔴 Intentando desactivar alarma con código...");
+    
+    int idUsuarioEncontrado = buscarUsuarioPorCodigo(currentPassword);
+    
+    if (idUsuarioEncontrado > 0) {
+      Serial.println("✅ CÓDIGO VÁLIDO - Desactivando alarma");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Alarma OFF");
+      lcd.setCursor(0, 1);
+      lcd.print("Codigo valido");
+      
+      // Desactivar alarma
+      alarmaActiva = false;
+      digitalWrite(relayFailPin, LOW);
+      failedAttempts = 0;
+      
+      delay(2000);
+      resetPasswordState();
+      
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Esperando user");
+      return;
+    } else {
+      Serial.println("❌ CÓDIGO INVÁLIDO - Alarma sigue activa");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Codigo invalido");
+      lcd.setCursor(0, 1);
+      lcd.print("Alarma activa");
+      delay(2000);
+      // Mantener la alarma activa
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("  ALARMA ON   ");
+      lcd.setCursor(0, 1);
+      lcd.print("Ingrese codigo");
+      currentPassword = ""; // Limpiar para nuevo intento
+      return;
+    }
+  }
+  
+  // Caso normal: Verificar código personal después de reconocer huella
+  if (currentUserID == 0) {
+    Serial.println("ERROR: currentUserID es 0 pero no hay alarma activa");
+    resetPasswordState();
+    return;
+  }
   
   String storedPassword = getUserPasswordFromID(currentUserID);
   
@@ -1493,27 +1648,24 @@ void verifyPassword() {
   Serial.println(storedPassword);
   
   if (currentPassword == storedPassword) {
-    Serial.println("CLAVE CORRECTA - Acceso concedido");
-    lcd.print("Acceso concedido!");
+    Serial.println("✅ CÓDIGO CORRECTO - Acceso completo confirmado");
+    lcd.print("Acceso completo!");
     lcd.setCursor(0, 1);
     lcd.print("Bienvenido!");
     
     // RESETEAR INTENTOS FALLIDOS INMEDIATAMENTE
     failedAttempts = 0;
     
-    // Activar relay de acceso
-    digitalWrite(relayPin, HIGH);
+    // El relay ya está activo (se abrió al reconocer la huella)
+    // Solo confirmar el acceso con clave (ya se registró como "Apertura" antes)
+    // No registrar de nuevo, solo cerrar la puerta
     
-    // Establecer estado de acceso concedido
-    accessGranted = true;
-    accessGrantedTime = millis();
+    // Mantener relay activo un poco más para permitir el paso
+    delay(2000);
     
-    // Intentar registrar el acceso (pero no bloquear si falla)
-    logUserAccess(currentUserID, "Apertura con clave");
-    
-    // Esperar con el relay activo
-    delay(3000);
+    // Cerrar relay
     digitalWrite(relayPin, LOW);
+    accessGranted = false;
     
     // Esperar a que el dedo se retire del sensor antes de resetear el estado
     Serial.println("Retira tu dedo del sensor...");
@@ -1534,27 +1686,33 @@ void verifyPassword() {
     return; // Salir de la función sin procesar más
     
   } else {
-    Serial.println("CLAVE INCORRECTA");
-    lcd.print("Clave incorrecta!");
+    Serial.println("❌ CÓDIGO INCORRECTO");
+    lcd.print("Codigo incorrecto!");
     lcd.setCursor(0, 1);
     lcd.print("Intento: " + String(failedAttempts + 1));
     failedAttempts++;
     
+    // Cerrar puerta si está abierta
+    digitalWrite(relayPin, LOW);
+    accessGranted = false;
+    
     if (failedAttempts >= 3) {
-      Serial.println("DEMASIADOS INTENTOS - Activando alarma");
+      Serial.println("🔴 DEMASIADOS INTENTOS - Activando alarma");
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Alarma activada!");
       delay(2000);
       activarAlarma();
+      // activarAlarma() ya configura el estado, no resetear aquí
+      return;
     }
+    
+    resetPasswordState();
+    delay(2000);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Esperando user");
   }
-  
-  resetPasswordState();
-  delay(2000);
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Esperando user");
 }
 
 void verifyFingerprint() {
@@ -1605,11 +1763,23 @@ void verifyFingerprint() {
     }
 
     if (userName.length() > 0) {
+      Serial.println("✅ Huella reconocida - Abriendo puerta inmediatamente");
+      
+      // ABRIR PUERTA INMEDIATAMENTE al reconocer la huella
+      digitalWrite(relayPin, HIGH);
+      accessGranted = true;
+      accessGrantedTime = millis();
+      
+      // Registrar acceso tipo "Apertura" (sin clave todavía)
+      logUserAccess(idUsuario, "Apertura");
+      
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Huella OK");
+      lcd.print("Acceso concedido");
       lcd.setCursor(0, 1);
       lcd.print("Ingrese clave...");
+      
+      delay(1000);
       
       // Configurar estado para entrada de contraseña
       waitingForPassword = true;
@@ -1618,7 +1788,6 @@ void verifyFingerprint() {
       currentUserName = userName;
       
       // Mostrar instrucciones en LCD
-      delay(1000);
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Ingrese clave:");
@@ -2054,11 +2223,26 @@ void sendHybridAlert() {
 }
 
 void activarAlarma() {
+  Serial.println("🔴 ACTIVANDO ALARMA - Estado persistente");
+  alarmaActiva = true;
   digitalWrite(relayFailPin, HIGH);
   sendHybridAlert(); // Enviar WhatsApp y llamada
   registrarAlarmaEnBD("Alarma activada");
-  delay(5000);
-  digitalWrite(relayFailPin, LOW);
+  
+  // Mostrar mensaje en LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("  ALARMA ON   ");
+  lcd.setCursor(0, 1);
+  lcd.print("Ingrese codigo");
+  
+  // NO desactivar automáticamente - la alarma permanece activa hasta que se ingrese código válido
   failedAttempts = 0;
+  
+  // Configurar estado para entrada de código de desactivación
+  waitingForPassword = true;
+  passwordStartTime = millis();
+  currentUserID = 0; // 0 indica que es para desactivar alarma (verificar contra cualquier usuario)
+  currentPassword = "";
 }
 
