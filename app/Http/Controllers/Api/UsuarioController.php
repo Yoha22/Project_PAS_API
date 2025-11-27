@@ -43,6 +43,7 @@ class UsuarioController extends Controller
             'cedula' => 'required|string|regex:/^[0-9]+$/|unique:usuarios,cedula',
             'celular' => 'required|string|regex:/^[0-9]+$/',
             'huella_digital' => 'nullable|integer',
+            'clave' => 'nullable|string|max:10|regex:/^[0-9]+$/',
         ]);
 
         // Si no se proporciona huella, intentar obtenerla de huellas_temporales
@@ -56,6 +57,7 @@ class UsuarioController extends Controller
             'cedula' => $validated['cedula'],
             'celular' => $validated['celular'],
             'huella_digital' => $validated['huella_digital'],
+            'clave' => $validated['clave'] ?? null,
         ]);
 
         // Si se usó una huella temporal, eliminarla
@@ -88,6 +90,7 @@ class UsuarioController extends Controller
             'nombre' => 'required|string|min:2|max:50',
             'cedula' => 'required|string|regex:/^[0-9]+$/|unique:usuarios,cedula,' . $id,
             'celular' => 'required|string|regex:/^[0-9]+$/',
+            'clave' => 'nullable|string|max:10|regex:/^[0-9]+$/',
         ]);
 
         $usuario->update($validated);
