@@ -1063,13 +1063,19 @@ void handleEnrollFingerprint() {
   if (p == FINGERPRINT_OK) {
     Serial.println("[HUella] Huella capturada exitosamente en sensor");
     
-    // Enviar huella a Laravel API con retry logic
+    // RESPONDER AL FRONTEND INMEDIATAMENTE después de capturar la huella
+    // Esto evita timeouts en el frontend mientras se envía al backend
+    Serial.println("[HUella] Respondiendo al frontend inmediatamente...");
+    addCORSHeaders(server);
+    server.send(200, "application/json", "{\"success\": true, \"idHuella\": " + String(id) + "}");
+    
+    // Ahora enviar huella al backend en segundo plano (después de responder al frontend)
     DynamicJsonDocument doc(256);
     doc["idHuella"] = id;
     String jsonData;
     serializeJson(doc, jsonData);
     
-    Serial.println("[HUella] Enviando huella al backend...");
+    Serial.println("[HUella] Enviando huella al backend en segundo plano...");
     bool backendSuccess = false;
     int retryCount = 0;
     const int MAX_RETRIES = 3;
@@ -1082,6 +1088,10 @@ void handleEnrollFingerprint() {
         Serial.println(MAX_RETRIES - 1);
         delay(1000 * retryCount); // Exponential backoff
       }
+      
+      // Mantener el servidor web respondiendo mientras se envía al backend
+      server.handleClient();
+      yield();
       
       String response = apiClient->post("/api/esp32/huella", jsonData.c_str());
       
@@ -1123,17 +1133,14 @@ void handleEnrollFingerprint() {
         Serial.println(errorMsg);
         retryCount++;
       }
+      
+      // Mantener el servidor web respondiendo entre reintentos
+      server.handleClient();
+      yield();
     }
     
-    // Responder al frontend siempre con éxito si la huella se capturó
-    // (aunque el backend pueda haber fallado, la huella está en el sensor)
-    addCORSHeaders(server);
-    if (backendSuccess) {
-      server.send(200, "application/json", "{\"success\": true, \"idHuella\": " + String(id) + "}");
-    } else {
-      // Avisar pero no fallar completamente
+    if (!backendSuccess) {
       Serial.println("[HUella] ADVERTENCIA: Huella capturada pero no se pudo enviar al backend después de " + String(MAX_RETRIES) + " intentos");
-      server.send(200, "application/json", "{\"success\": true, \"idHuella\": " + String(id) + ", \"warning\": \"Huella capturada pero no se pudo enviar al backend\"}");
     }
   } else {
     Serial.print("[HUella] ERROR al registrar huella en sensor. Código: ");
